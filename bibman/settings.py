@@ -1,8 +1,8 @@
 """Réglages du site de gestion de fr.json.
 
 Variables d'environnement :
-  FR_DB          base SQLite produite par json2db.sh (défaut : ./fr.db)
-  FR_TOOLS_LIB   dossier contenant frlib.py et json2db.py (défaut : ../outils/lib)
+  FR_DB          base SQLite produite par « manage.py loadjson » (défaut : ./biblio.db)
+  FR_TOOLS_LIB   dossier contenant frlib.py et json2db.py (défaut : ./outils/lib)
   FR_SYNONYMS    fichier de synonymes (défaut : ./synonyms.txt)
   FR_READONLY    1 = consultation seule (pas de création, modification ni suppression)
   DJANGO_SECRET_KEY, DJANGO_DEBUG (1 par défaut), DJANGO_ALLOWED_HOSTS (liste séparée par des virgules)
@@ -14,11 +14,11 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-FR_TOOLS_LIB = Path(os.environ.get('FR_TOOLS_LIB', BASE_DIR.parent / 'outils' / 'lib')).resolve()
+FR_TOOLS_LIB = Path(os.environ.get('FR_TOOLS_LIB', BASE_DIR / 'outils' / 'lib')).resolve()
 if str(FR_TOOLS_LIB) not in sys.path:
     sys.path.insert(0, str(FR_TOOLS_LIB))
 
-FR_DB = Path(os.environ.get('FR_DB', BASE_DIR / 'fr.db')).resolve()
+FR_DB = Path(os.environ.get('FR_DB', BASE_DIR / 'biblio.db')).resolve()
 FR_SYNONYMS = Path(os.environ.get('FR_SYNONYMS', BASE_DIR / 'synonyms.txt'))
 FR_READONLY = os.environ.get('FR_READONLY', '') == '1'
 
@@ -38,7 +38,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
 ]
 MESSAGE_STORAGE = 'django.contrib.messages.storage.cookie.CookieStorage'
-ROOT_URLCONF = 'frsite.urls'
+ROOT_URLCONF = 'bibman.urls'
 TEMPLATES = [{
     'BACKEND': 'django.template.backends.django.DjangoTemplates',
     'DIRS': [],
@@ -49,7 +49,7 @@ TEMPLATES = [{
         'pieces.context.site',
     ]},
 }]
-WSGI_APPLICATION = 'frsite.wsgi.application'
+WSGI_APPLICATION = 'bibman.wsgi.application'
 
 # Une seule base : celle de fr.json. Aucune table Django n'y est créée (pas de migrations, pas d'auth ni de sessions).
 DATABASES = {'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': FR_DB, 'OPTIONS': {'timeout': 20}}}
@@ -60,4 +60,5 @@ TIME_ZONE = 'Europe/Paris'
 USE_I18N = True
 USE_TZ = True
 STATIC_URL = 'static/'
+STATIC_ROOT = Path(os.environ.get('BIBMAN_STATIC_ROOT', BASE_DIR / 'staticfiles'))   # collectstatic (déploiement)
 DATA_UPLOAD_MAX_MEMORY_SIZE = 64 * 1024 * 1024        # un champ markdown peut dépasser 700 Ko

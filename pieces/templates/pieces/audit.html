@@ -1,0 +1,9 @@
+{% extends "pieces/base.html" %}
+{% block content %}
+<h1>Audit de cohérence</h1>
+{% for c in checks %}
+<h2>{{ c.label }} <small>({{ c.items|length }})</small></h2>
+{% if c.items %}<ul>{% for doc, detail in c.items|slice:":200" %}<li><a href="{% url 'detail' doc.key %}">{{ doc.key }}</a>{% if detail %} <small>{{ detail }}</small>{% endif %}</li>{% endfor %}</ul>
+{% if c.items|length > 200 %}<p><small>200 premiers affichés.</small></p>{% endif %}{% endif %}
+{% endfor %}
+{% endblock %}

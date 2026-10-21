@@ -1,0 +1,11 @@
+{% extends "pieces/base.html" %}
+{% block content %}
+<h1>Doublons probables</h1>
+<form method="get">seuil de similarité du texte : <input name="seuil" value="{{ threshold }}" size="4"> <button>Appliquer</button></form>
+<ul>
+{% for p in pairs %}<li>{{ p.score|floatformat:2 }} —
+  <a href="{% url 'detail' p.a.key %}">{{ p.a.key }}</a>{% if p.b %} / <a href="{% url 'detail' p.b.key %}">{{ p.b.key }}</a>{% endif %}
+  <small>{{ p.reasons|join:" ; " }}</small></li>
+{% empty %}<li>Aucun doublon.</li>{% endfor %}
+</ul>
+{% endblock %}

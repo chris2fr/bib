@@ -1,21 +1,46 @@
-# Site de gestion de fr.json (Django)
+# bibman — gestionnaire de bibliographie (Django)
 
-Application locale pour parcourir, rechercher, corriger et exporter le `fr.json` « remonté » (voir `../outils/`).
-Elle travaille sur **`fr.db`**, la base que produisent `json2db.sh` / `loadjson` : le modèle Django est *non géré*
-(`managed = False`) et réutilise `frlib.py`, donc les scripts `db2json.sh`, `db2bib.sh`, `bib2db.sh` et Datasette
-continuent de fonctionner sur la même base. Django n'y crée aucune table : **ne lancez pas `manage.py migrate`**.
+Application locale pour parcourir, rechercher, corriger et exporter une bibliographie au format « fr.json remonté ».
+Elle travaille sur **`biblio.db`** (SQLite), construite à partir de **`biblio.json`** : le modèle Django est *non géré*
+(`managed = False`) et s'appuie sur `outils/lib/frlib.py` (conversion entrée JSON <-> ligne) et `outils/lib/json2db.py`
+(schéma, index FTS5). Django n'y crée aucune table : **ne lancez pas `manage.py migrate`**.
+
+## Organisation
+
+```
+manage.py
+bibman/            projet Django (settings, urls, wsgi)
+pieces/            application : modèle, vues, recherche, formulaires, gabarits, commandes loadjson / dumpjson
+outils/lib/        frlib.py, json2db.py (partagés avec d'éventuels scripts hors Django)
+synonyms.txt       synonymes de la recherche
+```
 
 ## Démarrage
 
 ```sh
+python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt            # Django, markdown, nh3
-export FR_DB=/chemin/vers/fr.db            # défaut : ./fr.db
-python manage.py loadjson ../fr.json       # construit fr.db (ou : ../outils/json2db.sh fr.json fr.db)
+python manage.py loadjson biblio.json      # construit biblio.db (--force pour remplacer une base existante)
 python manage.py runserver                 # http://127.0.0.1:8000
+python manage.py test                      # tests
 ```
 
-`loadjson` refuse d'écraser une base existante sans `--force`. Les modifications faites dans le site vivent dans la base :
-`dumpjson [fr.json]` (ou le lien « fr.json » du site) réécrit le fichier, avec la même mise en forme que `db2json.sh`.
+Fichiers par défaut : `./biblio.db` (`FR_DB` pour changer) et `./biblio.json`. Les modifications faites dans le site vivent
+dans la base : `python manage.py dumpjson biblio.json` (ou le lien « fr.json » du site) réécrit le JSON.
+
+## Déploiement
+
+Application sans authentification, pensée pour un usage local ou un réseau de confiance (placez-la derrière un reverse proxy
+avec authentification, ou utilisez `FR_READONLY=1` pour une consultation seule).
+
+```sh
+export DJANGO_DEBUG=0 DJANGO_SECRET_KEY='...' DJANGO_ALLOWED_HOSTS=bib.example.org FR_DB=/var/lib/bibman/biblio.db
+python manage.py collectstatic --noinput   # copie les fichiers statiques dans staticfiles/ (BIBMAN_STATIC_ROOT)
+pip install gunicorn && gunicorn bibman.wsgi
+```
+
+Le serveur web frontal sert `/static/` depuis `staticfiles/` et transmet le reste à gunicorn. SQLite : un seul processus
+écrivain à la fois suffit pour cet usage ; le répertoire de la base doit être accessible en écriture.
 
 ## Recherche
 
@@ -45,13 +70,13 @@ cohérence entre la clé `AAAA-MM-JJ-acronyme-compteur` et `year`, `date`, `xacr
 ## Édition
 
 Formulaire pour les champs BibTeX (valeurs de base), les autres champs (JSON), les surcharges du .bib (JSON ; `null` supprime un
-champ du .bib) et le markdown. Contrôles : accolades équilibrées (sinon `db2bib` échouerait), JSON valide, champs réservés,
+champ du .bib) et le markdown. Contrôles : accolades équilibrées (sinon l'export .bib échouerait), JSON valide, champs réservés,
 clé unique. Les retours à la ligne des navigateurs (CRLF) sont normalisés : enregistrer sans rien changer ne modifie rien.
 `FR_READONLY=1` désactive création, modification et suppression.
 
 ## Réglages (variables d'environnement)
 
-`FR_DB` · `FR_TOOLS_LIB` (dossier de `frlib.py` et `json2db.py`, défaut `../outils/lib`) · `FR_SYNONYMS` · `FR_READONLY` ·
+`FR_DB` · `FR_TOOLS_LIB` (dossier de `frlib.py` et `json2db.py`, défaut `outils/lib`) · `FR_SYNONYMS` · `FR_READONLY` ·
 `DJANGO_SECRET_KEY` · `DJANGO_DEBUG` · `DJANGO_ALLOWED_HOSTS`. Pour autre chose qu'un usage local, définissez une vraie
 clé secrète, `DJANGO_DEBUG=0` et servez les fichiers statiques (`collectstatic`) ; il n'y a pas d'authentification.
 
@@ -67,5 +92,5 @@ python manage.py test pieces        # 22 tests : analyse de requête, recherche,
   eux, tiennent compte de la base **et** de la surcharge).
 - Le premier affichage d'une fiche (index de similarité) ou la première recherche approchante (vocabulaire) prend environ une
   seconde ; ensuite tout est en mémoire. Les caches se recalculent quand la base change, y compris par les scripts.
-- L'export `fr.bib` du site est le BibTeX « simple » (comme `json2bib.sh`) ; pour un export sans perte, utilisez `db2bib.sh`.
+- L'export `fr.bib` du site est le BibTeX « simple » (valeurs de base, surcharges appliquées).
 - `synonyms.txt` n'est qu'un point de départ : adaptez-le à votre corpus.
