@@ -50,3 +50,6 @@ form.inline button { font-size: .8rem; padding: 0 .4rem; }
 .ovbtn { opacity: .45; transition: opacity .15s; }
 .ovbtn:hover, .ovbtn:focus-within, tr:hover .ovbtn { opacity: 1; }
 .ovbtn button { font-family: ui-monospace, monospace; }
+article.is-dup { border-left: 4px solid #d97706; padding-left: .6rem; }
+article.is-dup h2 a:first-child { opacity: .85; }
+.badge-dup { font-size: .75rem; font-weight: 400; background: rgba(217,119,6,.15); border-radius: 4px; padding: 0 .4rem; white-space: nowrap; }

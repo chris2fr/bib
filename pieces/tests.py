@@ -503,6 +503,19 @@ class DeclaredDuplicateTests(FrTestCase):
         self.assertIsNone(Piece.objects.get(key=self.B).xdup)
         self.assertIn(frozenset([self.A, self.B]), self.pair_keys())
 
+    def test_list_marks_declared_duplicates(self):
+        self.declare(self.B, self.A)
+        html = self.c.get('/?q=doublet+géothermique+dogger').content.decode()
+        self.assertIn('class="is-dup"', html)
+        self.assertEqual(html.count('doublon de'), 1)                                       # seule B est marquée, pas A
+        self.assertIn(f'doublon de <a href="/p/{self.A}/">{self.A}</a>', html)
+        Piece.objects.filter(key=self.B).update(xdup='gone')
+        bump()
+        self.assertIn('gone (introuvable)', self.c.get('/?q=doublet+géothermique+dogger').content.decode())
+        Piece.objects.filter(key=self.B).update(xdup=None)
+        bump()
+        self.assertNotIn('doublon de', self.c.get('/?q=doublet+géothermique+dogger').content.decode())
+
     def test_rules(self):
         self.assertIn('Aucune entrée', self.declare(self.B, 'nope').content.decode())
         self.assertIn('propre doublon', self.declare(self.B, self.B).content.decode())

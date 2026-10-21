@@ -60,8 +60,10 @@ def list_view(request):
     out = search.search(q, mode=mode, facets=selected, sort=sort, broad=broad, date_from=du, date_to=au)
     page = Paginator(out.ranked, PER_PAGE).get_page(request.GET.get('page'))
     snips = search.snippets([d.n for d, _, _ in page], out.highlight)
+    corpus = get_corpus()
     items = [{'doc': d, 'score': s, 'count': c, 'snippet': snips.get(d.n),
-              'abstract': (d.v['abstract'] or '')[:260], 'has_file': bool(files.locate(d.key, d.v['file']))} for d, s, c in page]
+              'abstract': (d.v['abstract'] or '')[:260], 'has_file': bool(files.locate(d.key, d.v['file'])),
+              'dup_of': d.v['xdup'] and {'key': d.v['xdup'], 'target': corpus.by_key.get(d.v['xdup'])}} for d, s, c in page]
     params = request.GET.copy()
     params.pop('page', None)
     facets_ui, chips = [], []

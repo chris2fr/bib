@@ -37,8 +37,8 @@
   <p><strong>{{ total }}</strong> résultat{{ total|pluralize }} sur {{ out.total_docs }}
     {% if not broad and q %}· <a href="{{ broad_url }}">élargir (racines, orthographe)</a>{% endif %}</p>
   {% for it in items %}
-  <article>
-    <h2><a href="{% url 'detail' it.doc.key %}">{{ it.doc.title }}</a></h2>
+  <article{% if it.dup_of %} class="is-dup"{% endif %}>
+    <h2><a href="{% url 'detail' it.doc.key %}">{{ it.doc.title }}</a>{% if it.dup_of %} <span class="badge-dup" title="Doublon conservé car cité par d'anciens documents">⧉ doublon de {% if it.dup_of.target %}<a href="{% url 'detail' it.dup_of.key %}">{{ it.dup_of.key }}</a>{% else %}<span class="error">{{ it.dup_of.key }} (introuvable)</span>{% endif %}</span>{% endif %}</h2>
     <p class="meta"><code>{{ it.doc.key }}</code>{% if it.doc.v.author %} · {{ it.doc.v.author }}{% endif %}{% if it.doc.v.xtheme %} · {{ it.doc.v.xtheme }}{% endif %}{% if it.has_file %} · <a href="{% url 'source_file' it.doc.key %}">📄 fichier</a>{% endif %}</p>
     {% if it.snippet %}<p class="snippet">{{ it.snippet }}</p>{% elif it.abstract %}<p class="snippet">{{ it.abstract }}</p>{% endif %}
   </article>
