@@ -372,7 +372,7 @@ HELP = [
     {'title': 'Une date précise ou un mois', 'intro': "Une date seule filtre les entrées dont la date commence par elle.",
      'examples': [('8 avril 2014', 'ce jour'), ('mai 1997', 'ce mois'), ('2014-04-08', 'idem, forme ISO'), ('date:1997-05', 'idem avec champ')]},
     {'title': 'Champs', 'intro': "champ:valeur (guillemets si la valeur contient des espaces ; - devant pour exclure). Les listes (theme, type, org…) acceptent plusieurs valeurs séparées par des virgules.",
-     'examples': [('theme:dogger', 'thème'), ('type:email', 'type'), ('org:brgm', 'organisation'), ('auteur:dupont', 'auteur'), ('titre:"réseau de chaleur"', 'dans le titre'),
+     'examples': [('theme:dogger', 'thème'), ('nature:email', 'nature (champ type) ; type:email est équivalent'), ('org:brgm', 'organisation'), ('auteur:dupont', 'auteur'), ('titre:"réseau de chaleur"', 'dans le titre'),
                   ('lang:fr', 'langue'), ('acr:brgmfr', 'source (acronyme)'), ('-theme:dogger', 'tout sauf ce thème')]},
     {'title': 'Présence', 'intro': 'has: / no: (ou sans:) testent la présence d’un champ.',
      'examples': [('has:url', 'avec une adresse'), ('no:note', 'sans note'), ('has:override', 'avec surcharges du .bib'), ('has:xdup', 'doublons déclarés'), ('no:xdup', 'hors doublons déclarés'), ('xdup:2015-00-00-sigesfr-dogger', 'doublons de cette entrée')]},

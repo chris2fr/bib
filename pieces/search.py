@@ -35,8 +35,8 @@ from .textutil import FR_STOP, fold, stem, strip_elision, tokens
 BM25_WEIGHTS = '6, 10, 5, 4, 3, 6, 3, 1'          # id, title, author, abstract, note, keywords, organization, markdown
 LEVEL_WEIGHT = {'exact': 1.0, 'mots séparés': 0.8, 'racine': 0.7, 'approchant': 0.5}
 IDENT_SCORE, KEY_SCORE = 12.0, 20.0
-FACETS = ['xtheme', 'xtype', 'xacronym', 'type', 'language']
-FACET_LABELS = {'xtheme': 'Thème', 'xtype': 'Nature', 'xacronym': 'Source', 'type': 'Type', 'language': 'Langue',
+FACETS = ['xtheme', 'type', 'xacronym', 'language']
+FACET_LABELS = {'xtheme': 'Thème', 'type': 'Nature', 'xacronym': 'Source', 'language': 'Langue',
                 'decade': 'Décennie'}
 SORTS = [('rel', 'Pertinence'), ('date', 'Chronologique'), ('date_desc', 'Plus récent d\'abord'), ('title', 'Titre')]
 
@@ -45,7 +45,7 @@ _MONTH_RE = '|'.join(MONTHS)
 FIELD_ALIASES = {
     'title': 'title', 'titre': 'title', 'author': 'author', 'auteur': 'author',
     'org': 'organization', 'organisation': 'organization', 'organization': 'organization',
-    'theme': 'xtheme', 'xtheme': 'xtheme', 'type': 'type', 'xtype': 'xtype', 'nature': 'xtype',
+    'theme': 'xtheme', 'xtheme': 'xtheme', 'type': 'type', 'nature': 'type', 'xtype': 'xtype',
     'acr': 'xacronym', 'acronyme': 'xacronym', 'source': 'xacronym', 'xacronym': 'xacronym',
     'kw': 'keywords', 'mot': 'keywords', 'motcle': 'keywords', 'keyword': 'keywords', 'keywords': 'keywords',
     'lang': 'language', 'langue': 'language', 'language': 'language', 'entrytype': 'entrytype',

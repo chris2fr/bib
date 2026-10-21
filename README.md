@@ -69,7 +69,7 @@ documents contenant au moins la moitié des mots (« résultats partiels ») ; u
 Classement : bm25 pondéré par colonne, majoré pour les identifiants, les mots du titre et le nombre de mots trouvés.
 La case « élargir » ajoute racines et orthographe approchante même quand des résultats exacts existent.
 
-Autres outils : facettes cliquables (thème, nature, source, type, langue, décennie), tri, extraits surlignés, documents
+Autres outils : facettes cliquables (thème, nature = champ `type`, source, langue, décennie), tri, extraits surlignés, documents
 proches (TF-IDF), **doublons probables** (texte très proche, même titre, même sha256, `xduplicate`) et **audit** de
 cohérence entre la clé `AAAA-MM-JJ-acronyme-compteur` et `year`, `date`, `xacronym`, `xcounter`, `shorthand`.
 

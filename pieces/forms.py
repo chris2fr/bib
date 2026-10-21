@@ -260,8 +260,8 @@ class AdvancedSearchForm(forms.Form):
     sort = forms.ChoiceField(label='Tri', required=False, choices=[])
 
     # liste déroulante (champ de recherche, étiquette, requête de la forme champ:valeur)
-    SELECTS = [('entrytype', 'ENTRYTYPE', 'entrytype'), ('xtheme', 'Thème', 'theme'), ('xtype', 'Nature', 'nature'),
-               ('type', 'Type', 'type'), ('xacronym', 'Source', 'acr'), ('language', 'Langue', 'lang')]
+    SELECTS = [('entrytype', 'ENTRYTYPE', 'entrytype'), ('xtheme', 'Thème', 'theme'), ('type', 'Nature', 'nature'),
+               ('xacronym', 'Source', 'acr'), ('language', 'Langue', 'lang')]
 
     def __init__(self, *args, choices=None, sorts=(), **kwargs):
         super().__init__(*args, **kwargs)

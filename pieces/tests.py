@@ -193,6 +193,19 @@ class SearchTests(FrTestCase):
         out = search.search('', date_from='2014-01-01', date_to='2014-12-31')
         self.assertIn('date du 2014-01-01 au 2014-12-31', out.interp['filters'])
 
+    def test_nature_is_the_type_field(self):
+        Piece.objects.filter(key='2014-04-08-cassationcrim-1283214').update(type='arrêt')
+        bump()
+        out = search.search('')
+        facets = {f['name']: f for f in out.facets}
+        self.assertEqual(facets['type']['label'], 'Nature')
+        self.assertEqual(facets['type']['values'], [('arrêt', 1)])
+        self.assertNotIn('xtype', facets)                                                   # plus de facette sur xtype
+        self.assertEqual(self.keys('nature:arret'), ['2014-04-08-cassationcrim-1283214'])    # « nature » = champ type
+        self.assertEqual(self.keys('type:arret'), ['2014-04-08-cassationcrim-1283214'])
+        self.assertEqual(self.keys('xtype:arret'), ['2014-04-08-cassationcrim-1283214'])     # xtype reste filtrable explicitement
+        self.assertEqual(self.keys('', facets={'type': ['arrêt']}), ['2014-04-08-cassationcrim-1283214'])
+
     def test_fts_mode_and_errors(self):
         self.assertTrue(self.keys('dogger NEAR(corrosion tubages, 10)', mode='fts'))
         self.assertIn('invalide', search.search('dogger AND (', mode='fts').error)
