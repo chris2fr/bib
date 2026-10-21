@@ -7,6 +7,11 @@
   <label><input type="checkbox" name="mode" value="fts"{% if mode == 'fts' %} checked{% endif %}> FTS5 brut</label>
   <label><input type="checkbox" name="broad" value="1"{% if broad %} checked{% endif %}> élargir</label>
   <button>Chercher</button>
+  <span class="dates">
+    <label>du <input type="date" name="du" value="{{ du }}"></label>
+    <label>au <input type="date" name="au" value="{{ au }}"></label>
+  </span>
+  <a href="{% url 'help' %}">Aide à la recherche</a>
 </form>
 
 {% if out.error %}<p class="error">{{ out.error }}</p>{% endif %}

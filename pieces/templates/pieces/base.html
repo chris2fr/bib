@@ -11,6 +11,7 @@
   <a class="brand" href="{% url 'list' %}">{{ site_name }}</a>
   <nav>
     {% if not readonly %}<a href="{% url 'create' %}">Nouvelle entrée</a>{% endif %}
+    <a href="{% url 'help' %}">Aide</a>
     <a href="{% url 'audit' %}">Audit</a>
     <a href="{% url 'duplicates' %}">Doublons</a>
     <a href="{% url 'export_json' %}">fr.json</a>

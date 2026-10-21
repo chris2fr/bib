@@ -1,0 +1,29 @@
+{% extends "pieces/base.html" %}
+{% block title %}Aide à la recherche · {{ site_name }}{% endblock %}
+{% block content %}
+<h1>Aide à la recherche</h1>
+<p>Cliquez sur un exemple pour l'essayer. Sous la barre de recherche, la page indique comment la requête a été lue
+(mots exacts, élargis à la racine, orthographe approchante, filtres, notes).</p>
+<p><a href="#plages">Aller aux plages de dates</a></p>
+
+{% for s in sections %}
+<h2{% if s.title == 'Plages de dates précises' %} id="plages"{% endif %}>{{ s.title }}</h2>
+<p>{{ s.intro }}</p>
+<table class="help">
+  {% for q, what in s.examples %}<tr><td><a href="{% url 'list' %}?q={{ q|urlencode }}"><code>{{ q }}</code></a></td><td>{{ what }}</td></tr>{% endfor %}
+</table>
+{% if s.title == 'Plages de dates précises' %}
+<p><strong>Dans le formulaire</strong> : les champs « du » et « au » sous la barre de recherche (avec calendrier) donnent la même plage,
+jusqu'à une borne seule : « du » seul = à partir de cette date, « au » seul = jusqu'à cette date. Ils se combinent avec les mots,
+les champs et les facettes.</p>
+{% endif %}
+{% endfor %}
+
+<h2>Heuristiques</h2>
+<p>Chaque mot est résolu séparément, de plus en plus largement, jusqu'à obtenir des résultats : exact (avec les synonymes de
+<code>synonyms.txt</code>), puis racine (<code>géothermiques</code> → <code>geothermi*</code>), puis orthographe approchante.
+Si le ET est vide, le site propose les documents contenant au moins la moitié des mots (« résultats partiels »). La case
+« élargir » ajoute racines et orthographe approchante même quand des résultats exacts existent.</p>
+<p>Classement : pertinence (titre &gt; clé = mots-clés &gt; auteur &gt; résumé &gt; note = organisation &gt; texte), majorée pour les
+identifiants et les mots du titre ; les tris Chronologique, Plus récent et Titre sont aussi disponibles.</p>
+{% endblock %}

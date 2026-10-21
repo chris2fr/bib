@@ -46,6 +46,8 @@ Le serveur web frontal sert `/static/` depuis `staticfiles/` et transmet le rest
 
 ## Recherche
 
+La page **Aide** du site (`/aide/`) détaille la syntaxe avec des exemples cliquables ; les champs « du / au » sous la barre de recherche filtrent par plage de dates avec un calendrier.
+
 Insensible aux accents et à la casse. Le site affiche sous la barre de recherche comment la requête a été lue.
 
 | Besoin | Exemple |
@@ -53,6 +55,7 @@ Insensible aux accents et à la casse. Le site affiche sous la barre de recherch
 | mots (ET) | `géothermie dogger corrosion` |
 | expression, exclusion, préfixe | `"nappe du dogger"` · `-corrosion` · `géotherm*` |
 | dates et périodes | `entre 1990 et 2000` · `avant 2010` · `depuis 2015` · `mai 1997` · `8 avril 2014` · `2014-04-08` · `1997` |
+| plages de dates précises | `entre 1997-05-12 et 1998-03-01` · `du 8 avril 2014 au 3 juin 2015` · `date:1997-05..1997-09` · `date:>=2014-04-08` · `avant 8 avril 2014` · `depuis mai 1997` |
 | champs | `theme:dogger` · `type:email` · `org:brgm` · `auteur:dupont` · `titre:"réseau de chaleur"` · `year:1990..2000` · `lang:fr` |
 | présence | `has:url` · `no:note` · `has:override` (entrées avec surcharges du .bib) |
 | clés, identifiants | `brgmfr-39522` · `39522` · `R39522` |

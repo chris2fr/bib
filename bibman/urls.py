@@ -9,6 +9,7 @@ urlpatterns = [
     path('p/<str:key>/modifier/', views.edit, name='edit'),
     path('p/<str:key>/supprimer/', views.delete, name='delete'),
     path('p/<str:key>/bib/', views.piece_bib, name='piece_bib'),
+    path('aide/', views.help_view, name='help'),
     path('audit/', views.audit_view, name='audit'),
     path('doublons/', views.duplicates_view, name='duplicates'),
     path('export/fr.json', views.export_json, name='export_json'),
