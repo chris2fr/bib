@@ -1,15 +1,17 @@
 import functools
 import json
+import mimetypes
 
 from django.conf import settings
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db import DatabaseError
-from django.http import HttpResponse, HttpResponseForbidden
+from django.http import FileResponse, Http404, HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from frlib import BIBSET, SPECIAL
 
-from . import helpers, search
+from . import files, helpers, search
 from .audit import run_audit
 from .bibfmt import bib_text
 from .corpus import get_corpus
@@ -52,12 +54,13 @@ def list_view(request):
     mode = 'fts' if request.GET.get('mode') == 'fts' else 'auto'
     broad = request.GET.get('broad') == '1'
     sort = request.GET.get('sort', 'rel')
+    du, au = request.GET.get('du', '').strip(), request.GET.get('au', '').strip()
     selected = {n: request.GET.getlist(n) for n in FACET_NAMES if request.GET.getlist(n)}
-    out = search.search(q, mode=mode, facets=selected, sort=sort, broad=broad)
+    out = search.search(q, mode=mode, facets=selected, sort=sort, broad=broad, date_from=du, date_to=au)
     page = Paginator(out.ranked, PER_PAGE).get_page(request.GET.get('page'))
     snips = search.snippets([d.n for d, _, _ in page], out.highlight)
     items = [{'doc': d, 'score': s, 'count': c, 'snippet': snips.get(d.n),
-              'abstract': (d.v['abstract'] or '')[:260]} for d, s, c in page]
+              'abstract': (d.v['abstract'] or '')[:260], 'has_file': bool(files.locate(d.key, d.v['file']))} for d, s, c in page]
     params = request.GET.copy()
     params.pop('page', None)
     facets_ui, chips = [], []
@@ -77,7 +80,7 @@ def list_view(request):
                 chips.append({'label': f'{f["label"]} : {value}', 'url': '?' + qd.urlencode()})
         facets_ui.append({'label': f['label'], 'values': ui})
     return render(request, 'pieces/list.html', {
-        'q': q, 'mode': mode, 'broad': broad, 'sort': out.sort if out.sort in dict(search.SORTS) else 'rel',
+        'q': q, 'du': du, 'au': au, 'mode': mode, 'broad': broad, 'sort': out.sort if out.sort in dict(search.SORTS) else 'rel',
         'sorts': search.SORTS, 'out': out, 'interp': out.interp, 'page': page, 'items': items, 'total': len(out.ranked),
         'facets_ui': facets_ui, 'chips': chips, 'selected': selected,
         'hidden': [(n, v) for n, vs in selected.items() for v in vs],
@@ -112,9 +115,37 @@ def detail(request, key):
         similar = []
     return render(request, 'pieces/detail.html', {
         'piece': piece, 'entry': entry, 'rows': rows, 'extras': extras, 'body': body, 'truncated': truncated,
-        'size': len(piece.markdown), 'bib': bib_text(entry), 'similar': similar,
+        'size': len(piece.markdown), 'source': source_info(piece), 'bib': bib_text(entry), 'similar': similar,
         'raw': json.dumps({k: v for k, v in entry.items() if k != 'markdown'}, ensure_ascii=False, indent=2),
     })
+
+
+def source_info(piece):
+    """Fichier source pour la fiche : trouvé (lien), introuvable dans le dossier, ou dossier absent."""
+    loc = files.locate(piece.key, piece.file)
+    if loc:
+        return {'state': 'found', 'name': loc.name, 'via': loc.via, 'url': reverse('source_file', args=[piece.key])}
+    return {'state': 'missing' if files.folder().is_dir() else 'nofolder', 'name': files.expected_name(piece.key, piece.file),
+            'folder': files.folder()}
+
+
+INLINE = ('application/pdf', 'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'text/plain')
+
+
+def source_file(request, key):
+    """Sert le fichier source (PDF affiché dans le navigateur ; les autres types sont téléchargés)."""
+    piece = get_object_or_404(Piece, key=key)
+    loc = files.locate(piece.key, piece.file)
+    if not loc:
+        raise Http404('Fichier source introuvable')
+    ctype = mimetypes.guess_type(loc.name)[0] or 'application/octet-stream'
+    return FileResponse(open(loc.path, 'rb'), content_type=ctype, filename=loc.name,
+                        as_attachment=ctype not in INLINE or request.GET.get('download') == '1')
+
+
+def warn_if_file_missing(request, piece):
+    if piece.file and files.folder().is_dir() and not files.locate(piece.key, piece.file):
+        messages.warning(request, f'Fichier « {piece.file} » introuvable dans le dossier BIBMAN_FILES.')
 
 
 @writable
@@ -132,6 +163,7 @@ def edit(request, key):
                 if 'key' in changed:
                     msg += f' Clé renommée : {key} → {piece.key}.' + (' shorthand mis à jour.' if form.shorthand_synced else '')
                 messages.success(request, msg)
+                warn_if_file_missing(request, piece)
             else:
                 messages.info(request, 'Aucun changement.')
             return redirect('detail', key=piece.key)
@@ -149,6 +181,7 @@ def create(request):
             piece.save(force_insert=True)
             helpers.remember(piece)
             messages.success(request, 'Entrée créée.')
+            warn_if_file_missing(request, piece)
             return redirect('detail', key=piece.key)
     else:
         form = PieceForm(creating=True)
@@ -197,3 +230,35 @@ def duplicates_view(request):
         threshold = 0.85
     return render(request, 'pieces/duplicates.html',
                   {'pairs': get_similarity().duplicates(threshold), 'threshold': threshold})
+
+
+HELP = [
+    {'title': 'Mots', 'intro': "Tous les mots doivent être présents (ET). Accents et majuscules sont ignorés ; les mots vides (le, de, du…) sont ignorés dès qu'il reste d'autres mots.",
+     'examples': [('géothermie dogger corrosion', 'trois mots'), ('"nappe du dogger"', 'expression exacte'),
+                  ('dogger -corrosion', 'exclure un mot'), ('géotherm*', 'début de mot')]},
+    {'title': 'Années', 'intro': "Une année seule filtre sur l'année de l'entrée (champ year, calculé à partir de la date).",
+     'examples': [('1997', 'une année'), ('entre 1990 et 2000', 'période, bornes comprises'), ('de 1990 à 2000', 'idem'), ('1990..2000', 'idem'),
+                  ('avant 2010', "jusqu'en 2009"), ('depuis 2015', "à partir de 2015"), ('après 2015', 'à partir de 2016'), ('year:1990..2000', 'filtre explicite'), ('year:>2000', 'après 2000')]},
+    {'title': 'Plages de dates précises', 'intro': "Les dates s'écrivent AAAA-MM-JJ ou en toutes lettres (8 avril 2014, mai 1997). Une date partielle (jour ou mois à 00 dans la fiche) vaut toute sa période : "
+     "1997-05-00 est « mai 1997 ». Une entrée correspond si sa date chevauche la plage demandée ; sans date, c'est l'année qui sert.",
+     'examples': [('entre 1997-05-12 et 1998-03-01', 'du 12 mai 1997 au 1er mars 1998'), ('du 8 avril 2014 au 3 juin 2015', 'en toutes lettres'),
+                  ('entre mai 1997 et mars 1998', 'de mai 1997 (début) à mars 1998 (fin)'), ('date:1997-05-12..1998-03-01', 'forme avec champ'),
+                  ('date:1997-05..1997-09', 'de mai à septembre 1997'), ('date:1997-05-12..', "à partir d'un jour (borne ouverte)"), ('date:..1999-06', "jusqu'à fin juin 1999"),
+                  ('date:>=2014-04-08', 'à partir du 8 avril 2014'), ('date:<2000-01-01', 'avant le 1er janvier 2000'),
+                  ('avant 8 avril 2014', 'strictement avant'), ('après 8 avril 2014', 'strictement après'), ('depuis mai 1997', 'à partir du 1er mai 1997')]},
+    {'title': 'Une date précise ou un mois', 'intro': "Une date seule filtre les entrées dont la date commence par elle.",
+     'examples': [('8 avril 2014', 'ce jour'), ('mai 1997', 'ce mois'), ('2014-04-08', 'idem, forme ISO'), ('date:1997-05', 'idem avec champ')]},
+    {'title': 'Champs', 'intro': "champ:valeur (guillemets si la valeur contient des espaces ; - devant pour exclure). Les listes (theme, type, org…) acceptent plusieurs valeurs séparées par des virgules.",
+     'examples': [('theme:dogger', 'thème'), ('type:email', 'type'), ('org:brgm', 'organisation'), ('auteur:dupont', 'auteur'), ('titre:"réseau de chaleur"', 'dans le titre'),
+                  ('lang:fr', 'langue'), ('acr:brgmfr', 'source (acronyme)'), ('-theme:dogger', 'tout sauf ce thème')]},
+    {'title': 'Présence', 'intro': 'has: / no: (ou sans:) testent la présence d’un champ.',
+     'examples': [('has:url', 'avec une adresse'), ('no:note', 'sans note'), ('has:override', 'avec surcharges du .bib')]},
+    {'title': 'Clés et identifiants', 'intro': "La clé de citation (ou un fragment) et les identifiants se cherchent tels quels : clé, number, xcounter, shorthand, file, url, note.",
+     'examples': [('brgmfr-39522', 'clé ou fragment de clé'), ('39522', 'identifiant'), ('R39522', 'identifiant, espaces et tirets ignorés')]},
+    {'title': 'FTS5 brut', 'intro': "Case « FTS5 brut » : la requête est transmise telle quelle à SQLite FTS5 (AND, OR, NOT, NEAR, colonne:mot). Les filtres de dates et les facettes restent utilisables par les champs « du / au » et les facettes.",
+     'examples': [('dogger NEAR(corrosion tubage, 10)', 'proximité'), ('title:dogger NOT corrosion', 'colonne et exclusion')]},
+]
+
+
+def help_view(request):
+    return render(request, 'pieces/help.html', {'sections': HELP})

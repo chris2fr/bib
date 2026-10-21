@@ -39,3 +39,6 @@ details.text > summary h2 { display: inline; }
   background: Canvas; color: CanvasText; border: 1px solid var(--line); border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,.15); }
 .suggest li { padding: .25rem .5rem; cursor: pointer; }
 .suggest li.active, .suggest li:hover { background: rgba(27,106,201,.18); }
+table.help { margin: .5rem 0 1.5rem; }
+table.help td:first-child { width: 28rem; }
+.dates { display: flex; gap: .75rem; align-items: center; flex-basis: 100%; }

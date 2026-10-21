@@ -4,6 +4,9 @@ Pipeline (mode « auto »)
  1. Interprétation de la requête (sur du texte sans accents ni majuscules) :
       - dates et périodes : « entre 1990 et 2000 », « avant 2010 », « depuis 2015 », « mai 1997 », « 8 avril 2014 », 2014-04-08,
         une année seule (1997) devient un filtre sur l'année ;
+      - plages de dates précises : « entre 1997-05-12 et 1998-03-01 », « du 8 avril 2014 au 3 juin 2015 », date:1997-05..1997-09,
+        date:>=2014-04-08, « avant 8 avril 2014 », « depuis mai 1997 » ; une date partielle (jour ou mois 00) vaut toute sa période,
+        un document correspond si sa date chevauche la plage ;
       - filtres par champ : theme:dogger, org:brgm, auteur:"jean dupont", year:1990..2000, has:url, no:note, -theme:acp ;
       - clés de citation ou fragments (brgmfr-39522) et identifiants (39522, R39522) : cherchés dans la clé, number, xcounter,
         shorthand, file, url, note ; « mot » entre guillemets = expression exacte ; -mot = exclusion ; mot* = préfixe.
@@ -15,9 +18,11 @@ Pipeline (mode « auto »)
  4. Classement : bm25 pondéré par colonne (titre > clé = mots-clés > auteur > résumé > note = organisation > texte), minoré pour les
     racines et les approchants, majoré pour les identifiants, les mots présents dans le titre et le nombre de mots trouvés.
 Mode « fts » : la requête est transmise telle quelle à FTS5 (AND, OR, NOT, NEAR, "phrase", préfixe*, colonne:mot)."""
+import calendar
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+from datetime import date as _date, timedelta
 
 from django.conf import settings
 from django.db import DatabaseError, connection
@@ -77,6 +82,7 @@ class Interp:
     units: list = field(default_factory=list)
     year: tuple = None             # (lo, hi), bornes incluses, None = ouvert
     prefixes: list = field(default_factory=list)
+    ranges: list = field(default_factory=list)     # (début, fin) 'AAAA-MM-JJ', bornes incluses, None = ouvert
     fields: list = field(default_factory=list)      # (champ, valeur, négatif)
     has: list = field(default_factory=list)         # (nom, négatif)
     notes: list = field(default_factory=list)
@@ -137,6 +143,72 @@ def _intersect(a, b):
     return (lo, hi)
 
 
+_DTOK = rf'(?:\d{{4}}-\d{{2}}(?:-\d{{2}})?|(?:\d{{1,2}}|1er)\s+(?:{_MONTH_RE})\s+\d{{4}}|(?:{_MONTH_RE})\s+\d{{4}})'
+_DSIDE = rf'(?:{_DTOK}|\d{{4}})'
+_ISOP = r'\d{4}(?:-\d{2}(?:-\d{2})?)?'
+
+
+def _span(text):
+    """Période couverte par une date, complète ou non : '1997' -> ('1997-01-01', '1997-12-31'), '1997-05-00' -> tout mai 1997,
+    '8 avril 2014' -> ce jour. None si le texte n'est pas une date valide."""
+    t = (text or '').strip()
+    m = re.fullmatch(r'(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?', t)
+    if m:
+        y, mo, d = m.groups()
+    else:
+        m = re.fullmatch(rf'(?:(\d{{1,2}}|1er)\s+)?({_MONTH_RE})\s+(\d{{4}})', t)
+        if not m:
+            return None
+        d, mo, y = (m[1] or '').replace('er', '') or None, f'{MONTHS[m[2]]:02d}', m[3]
+    y, mo, d = int(y), int(mo or 0), int(d or 0)
+    if y < 1 or mo > 12:
+        return None
+    if not mo:
+        return f'{y:04d}-01-01', f'{y:04d}-12-31'
+    last = calendar.monthrange(y, mo)[1]
+    if not d:
+        return f'{y:04d}-{mo:02d}-01', f'{y:04d}-{mo:02d}-{last:02d}'
+    if d > last:
+        return None
+    return (f'{y:04d}-{mo:02d}-{d:02d}',) * 2
+
+
+def _shift(iso, days):
+    try:
+        return (_date.fromisoformat(iso) + timedelta(days=days)).isoformat()
+    except (ValueError, OverflowError):
+        return None
+
+
+def _range(a, b):
+    sa, sb = _span(a), _span(b)
+    if not sa or not sb:
+        return None
+    return min(sa[0], sb[0]), max(sa[1], sb[1])
+
+
+def _date_filter(value):
+    """date:A..B, date:..B, date:A.., date:>=A, >A, <=A, <A -> (début, fin) ; None si la valeur n'est pas une plage."""
+    m = re.fullmatch(r'(.*?)\.\.(.*)', value)
+    if m and (m[1] or m[2]):
+        a, b = (_span(m[1]) if m[1] else None), (_span(m[2]) if m[2] else None)
+        if (m[1] and not a) or (m[2] and not b):
+            return None
+        return _range(m[1], m[2]) if a and b else ((a[0] if a else None), (b[1] if b else None))
+    m = re.fullmatch(r'(>=|<=|>|<)\s*(.+)', value)
+    if m and _span(m[2]):
+        lo, hi = _span(m[2])
+        return {'>=': (lo, None), '>': (_shift(hi, 1), None), '<=': (None, hi), '<': (None, _shift(lo, -1))}[m[1]]
+    return None
+
+
+def _doc_span(doc):
+    sp = _span(doc.date) if doc.date else None
+    if sp is None and doc.year is not None:
+        sp = _span(f'{doc.year:04d}')
+    return sp
+
+
 def parse(q):
     it = Interp(q=q)
     s = ' ' + fold(q, lig=False).strip() + ' '
@@ -149,6 +221,30 @@ def parse(q):
     s = re.sub(r'\bentre\s+(\d{4})\s+et\s+(\d{4})\b', lambda m: year((int(m[1]), int(m[2])), f'période {m[1]}–{m[2]}'), s)
     s = re.sub(r'\bde\s+(\d{4})\s+a\s+(\d{4})\b', lambda m: year((int(m[1]), int(m[2])), f'période {m[1]}–{m[2]}'), s)
     s = re.sub(r'(?<![\w:-])(\d{4})(?:\.\.|-)(\d{4})(?![\w-])', lambda m: year((int(m[1]), int(m[2])), f'période {m[1]}–{m[2]}'), s)
+    def rng(lo, hi, note):
+        if lo is None and hi is None:
+            return None
+        it.ranges.append((lo, hi))
+        it.notes.append(note)
+        return ' '
+
+    def between(m):
+        r = _range(m[1], m[2])
+        return (rng(r[0], r[1], f'période du {r[0]} au {r[1]}') if r else None) or m[0]
+
+    def bound(kind):
+        def f(m):
+            sp = _span(m[1])
+            if not sp:
+                return m[0]
+            lo, hi = {'avant': (None, _shift(sp[0], -1)), 'apres': (_shift(sp[1], 1), None), 'depuis': (sp[0], None)}[kind]
+            return rng(lo, hi, f'{kind.replace("apres", "après")} {m[1].strip()}') or m[0]
+        return f
+    s = re.sub(rf'\bentre\s+({_DSIDE})\s+et\s+({_DSIDE})(?![\w-])', between, s)
+    s = re.sub(rf'\bdu\s+({_DSIDE})\s+au\s+({_DSIDE})(?![\w-])', between, s)
+    s = re.sub(rf'(?<![\w:-])({_ISOP})\.\.({_ISOP})(?![\w-])', between, s)
+    for kind in ('avant', 'apres', 'depuis'):
+        s = re.sub(rf'\b{kind}\s+({_DTOK})(?![\w-])', bound(kind), s)
     s = re.sub(r'\bavant\s+(\d{4})\b', lambda m: year((None, int(m[1]) - 1), f'avant {m[1]}'), s)
     s = re.sub(r'\bapres\s+(\d{4})\b', lambda m: year((int(m[1]) + 1, None), f'après {m[1]}'), s)
     s = re.sub(r'\bdepuis\s+(\d{4})\b', lambda m: year((int(m[1]), None), f'depuis {m[1]}'), s)
@@ -160,7 +256,7 @@ def parse(q):
     s = re.sub(rf'\b(\d{{1,2}}|1er)\s+({_MONTH_RE})\s+(\d{{4}})\b',
                lambda m: prefix(f'{m[3]}-{MONTHS[m[2]]:02d}-{int(m[1].replace("er", "")):02d}', f'date {m[0].strip()}'), s)
     s = re.sub(rf'\b({_MONTH_RE})\s+(\d{{4}})\b', lambda m: prefix(f'{m[2]}-{MONTHS[m[1]]:02d}', f'mois {m[0]}'), s)
-    s = re.sub(r'(?<![\w:-])(\d{4})-(0[1-9]|1[0-2])(?:-(\d{2}))?(?![\w-])',
+    s = re.sub(r'(?<![\w:.<>=-])(\d{4})-(0[1-9]|1[0-2])(?:-(\d{2}))?(?![\w-])',
                lambda m: prefix(m[0].strip(), f'date {m[0]}'), s)
 
     for m in _TOKEN_RE.finditer(s):
@@ -214,7 +310,11 @@ def _add_filter(it, canon, value, neg):
             it.year = _intersect(it.year, spec)
             return
     if canon == 'date':
-        it.prefixes.append(value)
+        r = _date_filter(value)
+        if r:
+            it.ranges.append(r)
+        else:
+            it.prefixes.append(value)
     elif canon in ('has', 'no'):
         it.has.append((value, neg != (canon == 'no')))     # (champ, doit être absent)
     else:
@@ -243,6 +343,10 @@ def passes(doc, it, facets):
         if doc.year is None or (lo is not None and doc.year < lo) or (hi is not None and doc.year > hi): return False
     if it.prefixes and not any(doc.date.startswith(p) or (len(p) == 4 and doc.year == int(p)) for p in it.prefixes):
         return False
+    for lo, hi in it.ranges:
+        sp = _doc_span(doc)
+        if sp is None or (lo and sp[1] < lo) or (hi and sp[0] > hi):
+            return False
     for f, value, neg in it.fields:
         wanted = [fold(v) for v in value.split(',')] if f in EQUALITY_FIELDS else [fold(value)]
         if f in EQUALITY_FIELDS:
@@ -342,13 +446,14 @@ def eval_unit(u, corpus, syn, broad=False):
 
 
 # ---------------------------------------------------------------- recherche
-def search(q='', mode='auto', facets=None, sort='rel', broad=False):
+def search(q='', mode='auto', facets=None, sort='rel', broad=False, date_from=None, date_to=None):
     corpus = get_corpus()
     facets = facets or {}
     out = Outcome(sort=sort, total_docs=len(corpus.docs))
     q = (q or '').strip()
     if mode == 'fts' and q:
         it = Interp(q=q)
+        _form_dates(it, date_from, date_to)
         cand = {d.n for d in corpus.docs if passes(d, it, facets)}
         try:
             hits = fts_hits(q)
@@ -362,6 +467,7 @@ def search(q='', mode='auto', facets=None, sort='rel', broad=False):
         out.interp = {'mode': 'FTS5 brut', 'filters': [], 'units': [], 'notes': [], 'relaxed': ''}
     else:
         it = parse(q) if q else Interp(q='')
+        _form_dates(it, date_from, date_to)
         cand = {d.n for d in corpus.docs if passes(d, it, facets)}
         syn = synonyms()
         for u in it.units:
@@ -410,6 +516,19 @@ def search(q='', mode='auto', facets=None, sort='rel', broad=False):
     return out
 
 
+def _form_dates(it, date_from, date_to):
+    """Plage « du … au … » du formulaire (dates ISO, éventuellement partielles) ajoutée aux filtres."""
+    a, b = _span(date_from), _span(date_to)
+    lo, hi = _range(date_from, date_to) if a and b else ((a[0] if a else None), (b[1] if b else None))
+    if lo or hi:
+        it.ranges.append((lo, hi))
+        it.notes.append('plage du formulaire : ' + _range_label(lo, hi))
+
+
+def _range_label(lo, hi):
+    return f'du {lo} au {hi}' if lo and hi else f'depuis le {lo}' if lo else f'jusqu\'au {hi}'
+
+
 def _title_boost(corpus, ids, scores, active):
     singles = [u for u in active if u.kind == 'term']
     for n in ids:
@@ -442,6 +561,7 @@ def _describe(it, relaxed):
         lo, hi = it.year
         filters.append('année ' + (f'{lo}' if lo == hi else f'{lo or "…"} – {hi or "…"}'))
     filters += [f'date commence par {p}' for p in it.prefixes]
+    filters += ['date ' + _range_label(lo, hi) for lo, hi in it.ranges]
     filters += [f'{"pas de " if neg else ""}{f} = {v}' if f in EQUALITY_FIELDS else f'{"pas de " if neg else ""}{f} contient « {v} »'
                 for f, v, neg in it.fields]
     filters += [(f'sans {name}' if absent else f'avec {name}') for name, absent in it.has]

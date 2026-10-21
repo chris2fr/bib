@@ -97,6 +97,36 @@ class ParseTests(TestCase):
         self.assertEqual([u.text for u in search.parse('du').units], ['du'])
 
 
+class DateRangeParseTests(TestCase):
+    def ranges(self, q):
+        it = search.parse(q)
+        return it.ranges, it.prefixes, it.year
+
+    def test_ranges(self):
+        for q, want in [('entre 1997-05-12 et 1998-03-01', ('1997-05-12', '1998-03-01')),
+                        ('du 8 avril 2014 au 3 juin 2015', ('2014-04-08', '2015-06-03')),
+                        ('entre mai 1997 et mars 1998', ('1997-05-01', '1998-03-31')),
+                        ('entre 1997-05-12 et 1999', ('1997-05-12', '1999-12-31')),
+                        ('date:1997-05..1997-09', ('1997-05-01', '1997-09-30')),
+                        ('date:1997-05-12..1998-03-01', ('1997-05-12', '1998-03-01')),
+                        ('1997-05-12..1998-03-01', ('1997-05-12', '1998-03-01')),
+                        ('date:1998..1997', ('1997-01-01', '1998-12-31')),                  # bornes inversées
+                        ('date:1997-05-12..', ('1997-05-12', None)), ('date:..1999-06', (None, '1999-06-30')),
+                        ('date:>=2014-04-08', ('2014-04-08', None)), ('date:>2014', ('2015-01-01', None)),
+                        ('date:<2000-01-01', (None, '1999-12-31')), ('date:<=2000', (None, '2000-12-31')),
+                        ('avant 8 avril 2014', (None, '2014-04-07')), ('après 8 avril 2014', ('2014-04-09', None)),
+                        ('depuis mai 1997', ('1997-05-01', None))]:
+            ranges, prefixes, year = self.ranges(q)
+            self.assertEqual((ranges, prefixes, year), ([want], [], None), q)
+
+    def test_unchanged_simple_forms(self):
+        self.assertEqual(self.ranges('entre 1990 et 2000'), ([], [], (1990, 2000)))
+        self.assertEqual(self.ranges('avant 2010'), ([], [], (None, 2009)))
+        self.assertEqual(self.ranges('8 avril 2014'), ([], ['2014-04-08'], None))
+        self.assertEqual(self.ranges('date:1997-05'), ([], ['1997-05'], None))
+        self.assertEqual(self.ranges('date:1997-02-30..1998'), ([], ['1997-02-30..1998'], None))   # date impossible : pas une plage
+
+
 class SearchTests(FrTestCase):
     def keys(self, q, **kw):
         return [d.key for d, _, _ in search.search(q, **kw).ranked]
@@ -146,6 +176,22 @@ class SearchTests(FrTestCase):
         out = search.search('dogger zzzzqqq')
         self.assertTrue(out.ranked and any('zzzzqqq' in n for n in out.interp['notes']))
 
+    def test_date_ranges(self):
+        B, S, C, A = '1997-05-00-brgmfr-39522', '2015-00-00-sigesfr-dogger', '2014-04-08-cassationcrim-1283214', '2008-00-00-acparisorg-0003'
+        self.assertEqual(self.keys('date:1997-05-12..1997-05-20'), [B])               # 1997-05-00 = tout mai 1997 : chevauche
+        self.assertEqual(self.keys('date:1997-06..1997-09'), [])
+        self.assertEqual(self.keys('entre 2014-04-01 et 2014-04-30'), [C])
+        self.assertEqual(self.keys('avant 8 avril 2014'), [B, A])                      # le 8 avril lui-même est exclu
+        self.assertEqual(self.keys('après mai 1997 avant 2009'), [A])
+        self.assertIn(B, self.keys('depuis mai 1997'))
+        self.assertNotIn(B, self.keys('après mai 1997'))
+        self.assertEqual(self.keys('dogger du 8 avril 2014 au 20 mars 2024'), [S, '2024-03-20-anteagroup-0001', '2024-03-20-anteagroup-0002'])
+        self.assertEqual(self.keys('', date_from='2014-01-01', date_to='2014-12-31'), [C])    # champs du / au du formulaire
+        self.assertEqual(self.keys('', date_from='2015-01-01'), [S, '2020-01-01-foo-0001', '2024-03-20-anteagroup-0001', '2024-03-20-anteagroup-0002'])
+        self.assertEqual(self.keys('"chambre criminelle"', mode='fts', date_to='2013'), [])
+        out = search.search('', date_from='2014-01-01', date_to='2014-12-31')
+        self.assertIn('date du 2014-01-01 au 2014-12-31', out.interp['filters'])
+
     def test_fts_mode_and_errors(self):
         self.assertTrue(self.keys('dogger NEAR(corrosion tubages, 10)', mode='fts'))
         self.assertIn('invalide', search.search('dogger AND (', mode='fts').error)
@@ -176,6 +222,78 @@ class SimilarAuditTests(FrTestCase):
         self.assertNotIn('1997-05-00-brgmfr-39522', found['year'])
 
 
+class SourceFilesTests(FrTestCase):
+    key = '1997-05-00-brgmfr-39522'
+
+    def setUp(self):
+        super().setUp()
+        self.c = Client()
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.dir = Path(self.tmp.name)
+        patcher = override_settings(BIBMAN_FILES=self.dir)
+        patcher.enable()
+        self.addCleanup(patcher.disable)
+
+    def test_locate_prefers_file_property_then_key_pdf(self):
+        from . import files
+        self.assertIsNone(files.locate(self.key, None))
+        (self.dir / f'{self.key}.pdf').write_bytes(b'%PDF-key')
+        self.assertEqual((files.locate(self.key, None).name, files.locate(self.key, None).via), (f'{self.key}.pdf', 'key'))
+        (self.dir / 'rapport.pdf').write_bytes(b'%PDF-prop')
+        loc = files.locate(self.key, 'rapport.pdf')
+        self.assertEqual((loc.name, loc.via), ('rapport.pdf', 'file'))
+        self.assertEqual(files.locate(self.key, 'absent.pdf').via, 'key')           # champ file introuvable : repli sur <clé>.pdf
+        for bad in ['../x.pdf', 'a/b.pdf', 'a\\b.pdf', '..', '/etc/passwd']:
+            self.assertFalse(files.safe_name(bad), bad)
+            self.assertIsNone(files.locate('zzz', bad))
+        self.assertEqual(files.expected_name(self.key, '../x'), f'{self.key}.pdf')
+
+    def test_serving_and_detail(self):
+        html = self.c.get(f'/p/{self.key}/').content.decode()
+        self.assertIn('introuvable dans', html)                                      # dossier présent, fichier absent
+        self.assertEqual(self.c.get(f'/p/{self.key}/fichier/').status_code, 404)
+        (self.dir / 'rapport.pdf').write_bytes(b'%PDF-prop')
+        Piece.objects.filter(key=self.key).update(file='rapport.pdf')
+        bump()                                                                        # update() ne passe pas par les signaux
+        html = self.c.get(f'/p/{self.key}/').content.decode()
+        self.assertIn(f'/p/{self.key}/fichier/', html)
+        r = self.c.get(f'/p/{self.key}/fichier/')
+        self.assertEqual((r.status_code, r['Content-Type'], b''.join(r.streaming_content)), (200, 'application/pdf', b'%PDF-prop'))
+        self.assertTrue(r['Content-Disposition'].startswith('inline'))
+        self.assertTrue(self.c.get(f'/p/{self.key}/fichier/?download=1')['Content-Disposition'].startswith('attachment'))
+        self.assertIn('fichier</a>', self.c.get('/?q=brgmfr-39522').content.decode())     # lien dans la liste
+        (self.dir / 'page.html').write_text('<script>alert(1)</script>')
+        Piece.objects.filter(key=self.key).update(file='page.html')
+        r = self.c.get(f'/p/{self.key}/fichier/')
+        self.assertTrue(r['Content-Disposition'].startswith('attachment'))                # jamais de HTML affiché sur le site
+        Piece.objects.filter(key=self.key).update(file='../secret.txt')
+        self.assertEqual(self.c.get(f'/p/{self.key}/fichier/').status_code, 404)
+        with override_settings(BIBMAN_FILES=self.dir / 'nope'):
+            self.assertIn('BIBMAN_FILES', self.c.get(f'/p/{self.key}/').content.decode())
+
+    def test_form_validation_datalist_and_warning(self):
+        (self.dir / 'rapport.pdf').write_bytes(b'x')
+        entry = Piece.objects.get(key=self.key).to_entry()
+        page = self.c.get(f'/p/{self.key}/modifier/').content.decode()
+        self.assertIn('<datalist id="files-list">', page)
+        self.assertIn('<option value="rapport.pdf">', page)
+        post = lambda **kw: self.c.post(f'/p/{self.key}/modifier/', {**dict(PieceForm.from_entry(entry).initial), **kw}, follow=True)
+        self.assertIn('sans dossier', post(file='scans/rapport.pdf').content.decode())
+        self.assertIn('sans dossier', post(file='..\\rapport.pdf').content.decode())
+        self.assertNotIn('introuvable', post(file='rapport.pdf').content.decode())
+        self.assertEqual(Piece.objects.get(key=self.key).file, 'rapport.pdf')
+        self.assertIn('Fichier « absent.pdf » introuvable', post(file='absent.pdf').content.decode())
+
+    def test_audit_file_checks(self):
+        Piece.objects.filter(key=self.key).update(file='scans/rapport.pdf')
+        Piece.objects.filter(key='2015-00-00-sigesfr-dogger').update(file='absent.pdf')
+        bump()
+        found = {c['id']: [d.key for d, _ in c['items']] for c in run_audit()}
+        self.assertEqual(found['file-path'], [self.key])
+        self.assertEqual(found['file-missing'], ['2015-00-00-sigesfr-dogger'])
+
+
 class ViewTests(FrTestCase):
     def setUp(self):
         super().setUp()
@@ -187,6 +305,17 @@ class ViewTests(FrTestCase):
                     '/nouvelle/', f'/p/{self.key}/modifier/', '/export/fr.json', '/export/fr.bib']:
             self.assertEqual(self.c.get(url).status_code, 200, url)
         self.assertEqual(self.c.get('/p/nope/').status_code, 404)
+
+    def test_help_page_and_date_form(self):
+        html = self.c.get('/aide/').content.decode()
+        self.assertIn('Plages de dates précises', html)
+        self.assertIn('?q=date%3A1997-05-12..1998-03-01', html)
+        self.assertIn('href="/aide/"', self.c.get('/').content.decode())
+        r = self.c.get('/?du=2014-01-01&au=2014-12-31').content.decode()
+        self.assertIn('2014-04-08-cassationcrim-1283214', r)
+        self.assertNotIn('2015-00-00-sigesfr-dogger', r)
+        self.assertIn('name="du" value="2014-01-01"', r)
+        self.assertEqual(self.c.get('/?du=pas-une-date').status_code, 200)
 
     def test_detail_shows_origins_and_sanitizes(self):
         html = self.c.get(f'/p/{self.key}/').content.decode()
