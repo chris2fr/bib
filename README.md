@@ -74,6 +74,25 @@ cohérence entre la clé `AAAA-MM-JJ-acronyme-compteur` et `year`, `date`, `xacr
 Formulaire pour les champs BibTeX (valeurs de base), les autres champs (JSON), les surcharges du .bib (JSON ; `null` supprime un
 champ du .bib) et le markdown. Contrôles : accolades équilibrées (sinon l'export .bib échouerait), JSON valide, champs réservés,
 clé unique. Les retours à la ligne des navigateurs (CRLF) sont normalisés : enregistrer sans rien changer ne modifie rien.
+**Heure et fuseau** : `xtime` est au format `HH:MM` (00:00–23:59). `xtimezone` se choisit dans la liste des fuseaux IANA
+(vide par défaut ; la colonne a pour valeur par défaut SQL `Europe/Paris`, mais l'application écrit NULL quand rien n'est choisi,
+et une base existante reçoit la colonne vide au premier accès). `xdatetime` est calculé, comme `year` : il combine la date
+**complète** (sans `00`) et `xtime` — `2014-04-08T14:30` — et, si un fuseau est choisi, l'ISO dans ce fuseau, heure d'été
+comprise — `2014-04-08T14:30+02:00`. Une heure sans date complète est refusée ; l'audit contrôle format, fuseau et cohérence.
+
+**Clé (ID)** : la clé de citation (colonne `id`, utilisée dans le .bib) est affichée et modifiable à l'édition. Renommer
+la clé met `shorthand` à jour (il vaut la clé par défaut), sauf s'il a été personnalisé ou modifié dans le même formulaire.
+Les autres champs qui citent l'ancienne clé (`xduplicate`, `xacronym`, `xcounter`...) ne sont pas réécrits : l'audit les signale.
+
+**Dates** : `date` doit être au format ISO `AAAA-MM-JJ`, `MM` et `JJ` pouvant valoir `00` (`1997-05-00`, `1997-00-00`) ; mois, jour et
+longueur du mois sont contrôlés à l'enregistrement (et dans le navigateur, avant l'envoi). `year` n'est plus saisi : il est
+calculé à partir de la date. Un petit calendrier facultatif remplit le champ (il ne sait pas écrire `00`, tapez-les à la main).
+Une entrée sans date garde son `year` hérité ; l'audit signale les dates mal formées et les `year` incohérents.
+
+**Listes d'aide** : `ENTRYTYPE`, `xtheme` et `xacronym` sont des listes déroulantes alimentées par une table indépendante
+`helper_values` de la même base. Elle est créée au premier usage et remplie par un `SELECT DISTINCT` sur les valeurs
+existantes ; pour ajouter une valeur, remplissez le champ « nouvelle valeur » sous la liste (il l'emporte sur le choix), elle
+est ajoutée à la liste à l'enregistrement. Supprimer la table `helper_values` la fait reconstruire depuis les données.
 `FR_READONLY=1` désactive création, modification et suppression.
 
 ## Réglages (variables d'environnement)

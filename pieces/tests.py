@@ -7,7 +7,7 @@ from django.db import connection
 from django.test import Client, TestCase, override_settings
 from frlib import BIBSET, SPECIAL
 
-from . import search
+from . import helpers, search
 from .audit import run_audit
 from .corpus import bump
 from .forms import PieceForm
@@ -199,6 +199,10 @@ class ViewTests(FrTestCase):
         self.assertNotIn('<script', html)
         self.assertNotIn('onerror', html)
 
+    def test_detail_text_folded_by_default(self):
+        self.assertIn('<details class="text">', self.c.get(f'/p/{self.key}/').content.decode())
+        self.assertIn('<details class="text" open>', self.c.get(f'/p/{self.key}/?full=1').content.decode())
+
     def _post_data(self, entry, **changes):
         data = dict(PieceForm.from_entry(entry).initial)
         data = {k: v.replace('\n', '\r\n') if isinstance(v, str) else v for k, v in data.items()}
@@ -219,6 +223,121 @@ class ViewTests(FrTestCase):
         self.assertEqual(new['piece_fond'], 12)                       # champs « autres » intacts
         self.assertIn(self.key, [d.key for d, _, _ in search.search('zzyzx').ranked])   # FTS et cache à jour
         self.assertEqual(list(new)[:3], list(entry)[:3])               # l'ordre des champs est conservé
+
+    def test_helper_lists_seeded_and_extended(self):
+        self.assertEqual(helpers.choices('entrytype'), ['misc'])
+        self.assertIn('géothermie', helpers.choices('xtheme'))
+        self.assertIn('sigesfr', helpers.choices('xacronym'))
+        page = self.c.get(f'/p/{self.key}/modifier/').content.decode()
+        self.assertIn('<select name="xtheme"', page)
+        self.assertIn('name="xtheme_new"', page)
+        entry = Piece.objects.get(key=self.key).to_entry()
+        self.c.post(f'/p/{self.key}/modifier/', self._post_data(entry, xtheme='dogger', xtheme_new=' sismique '), follow=True)
+        self.assertEqual(Piece.objects.get(key=self.key).xtheme, 'sismique')
+        self.assertIn('sismique', helpers.choices('xtheme'))
+        self.c.post('/nouvelle/', {'key': '2026-01-01-new-0001', 'entrytype': 'misc', 'entrytype_new': 'techreport', 'markdown': ''})
+        self.assertEqual(Piece.objects.get(key='2026-01-01-new-0001').entrytype, 'techreport')
+        self.assertIn('techreport', helpers.choices('entrytype'))
+
+    def test_date_validation_and_computed_year(self):
+        entry = Piece.objects.get(key=self.key).to_entry()
+        for bad in ['1997', '97-05-00', '1997-13-01', '1997-00-05', '1997-02-30', '1997-5-1', '0000-01-01']:
+            r = self.c.post(f'/p/{self.key}/modifier/', self._post_data(entry, date=bad))
+            self.assertEqual(r.status_code, 200, bad)
+            self.assertTrue('Format attendu' in r.content.decode() or 'invalide' in r.content.decode() or 'impose' in r.content.decode(), bad)
+        self.assertEqual(Piece.objects.get(key=self.key).date, '1997-05-00')
+        for good, year in [('2024-02-29', '2024'), ('1998-00-00', '1998'), ('1999-12-00', '1999')]:
+            self.c.post(f'/p/{self.key}/modifier/', self._post_data(entry, date=good, year='1111'), follow=True)
+            p = Piece.objects.get(key=self.key)
+            self.assertEqual((p.date, p.year), (good, year))          # le champ year envoyé est ignoré
+        self.c.post(f'/p/{self.key}/modifier/', self._post_data(entry, date=''), follow=True)
+        self.assertIsNone(Piece.objects.get(key=self.key).year)       # date effacée : année calculée supprimée
+        legacy = Piece.objects.get(key='2008-00-00-acparisorg-0003')
+        legacy.date = None
+        legacy.save(update_fields=['date'])
+        e = legacy.to_entry()
+        self.c.post(f'/p/{legacy.key}/modifier/', self._post_data(e, title='Autre titre'), follow=True)
+        self.assertEqual(Piece.objects.get(key=legacy.key).year, '2008')   # sans date : année héritée conservée
+        self.assertIn('id="datepick"', self.c.get(f'/p/{self.key}/modifier/').content.decode())
+
+    def test_rename_key_updates_shorthand(self):
+        entry = Piece.objects.get(key=self.key).to_entry()
+        page = self.c.get(f'/p/{self.key}/modifier/').content.decode()
+        self.assertIn(f'name="key" value="{self.key}"', page)
+        new = '1997-05-00-brgmfr-renamed'
+        r = self.c.post(f'/p/{self.key}/modifier/', self._post_data(entry, key=new), follow=True)
+        self.assertIn('Clé renommée', r.content.decode())
+        self.assertEqual(r.redirect_chain[-1][0], f'/p/{new}/')
+        self.assertFalse(Piece.objects.filter(key=self.key).exists())
+        p = Piece.objects.get(key=new)
+        self.assertEqual(p.shorthand, new)                                 # shorthand suit la clé
+        self.assertEqual(p.to_entry()['key'], new)
+        self.assertEqual(p.n, Piece.objects.get(key=new).n)
+        self.assertIn(new, [d.key for d, _, _ in search.search('renamed').ranked])   # FTS et cache à jour
+        self.assertEqual(self.c.get(f'/p/{self.key}/').status_code, 404)
+
+    def test_rename_key_keeps_custom_shorthand_and_checks_uniqueness(self):
+        entry = Piece.objects.get(key=self.key).to_entry()
+        Piece.objects.filter(key=self.key).update(shorthand='Ignatiadis 1997')
+        entry = Piece.objects.get(key=self.key).to_entry()
+        self.c.post(f'/p/{self.key}/modifier/', self._post_data(entry, key='1997-05-00-brgmfr-x1'), follow=True)
+        self.assertEqual(Piece.objects.get(key='1997-05-00-brgmfr-x1').shorthand, 'Ignatiadis 1997')   # personnalisé : conservé
+        entry = Piece.objects.get(key='1997-05-00-brgmfr-x1').to_entry()
+        self.c.post('/p/1997-05-00-brgmfr-x1/modifier/', self._post_data(entry, key='1997-05-00-brgmfr-x2', shorthand='Perso'), follow=True)
+        self.assertEqual(Piece.objects.get(key='1997-05-00-brgmfr-x2').shorthand, 'Perso')              # modifié dans le formulaire : respecté
+        r = self.c.post('/p/1997-05-00-brgmfr-x2/modifier/', self._post_data(entry, key='2015-00-00-sigesfr-dogger'))
+        self.assertIn('existe déjà', r.content.decode())
+        r = self.c.post('/p/1997-05-00-brgmfr-x2/modifier/', self._post_data(entry, key='a b/c'))
+        self.assertIn('Clé invalide', r.content.decode())
+
+    def test_time_timezone_and_xdatetime(self):
+        entry = Piece.objects.get(key=self.key).to_entry()
+        for bad in ['25:00', '9:5', '12:60', '1230']:
+            r = self.c.post(f'/p/{self.key}/modifier/', self._post_data(entry, date='2014-04-08', xtime=bad))
+            self.assertIn('Format attendu : HH:MM', r.content.decode(), bad)
+        r = self.c.post(f'/p/{self.key}/modifier/', self._post_data(entry, xtime='14:30'))           # date 1997-05-00 incomplète
+        self.assertIn('exige une date complète', r.content.decode())
+        r = self.c.post(f'/p/{self.key}/modifier/', self._post_data(entry, date='2014-04-08', xtime='14:30', xtimezone='Mars/Olympus'))
+        self.assertIn('Fuseau horaire inconnu', r.content.decode())
+
+        def save(**kw):
+            self.c.post(f'/p/{self.key}/modifier/', self._post_data(entry, **kw), follow=True)
+            return Piece.objects.get(key=self.key)
+        p = save(date='2014-04-08', xtime='14:30', xdatetime='ignoré')
+        self.assertEqual((p.xtime, p.xtimezone, p.xdatetime), ('14:30', None, '2014-04-08T14:30'))   # sans fuseau : heure seule
+        self.assertEqual(save(date='2014-04-08', xtime='14:30', xtimezone='Europe/Paris').xdatetime, '2014-04-08T14:30+02:00')
+        self.assertEqual(save(date='2014-01-08', xtime='14:30', xtimezone='Europe/Paris').xdatetime, '2014-01-08T14:30+01:00')
+        self.assertEqual(save(date='2014-01-08', xtime='00:00', xtimezone='America/New_York').xdatetime, '2014-01-08T00:00-05:00')
+        self.assertEqual(save(date='2014-01-08', xtime='', xtimezone='Europe/Paris').xdatetime, None)  # heure effacée
+        self.assertIn('<select name="xtimezone"', self.c.get(f'/p/{self.key}/modifier/').content.decode())
+        self.assertIn('<option value="Europe/Paris"', self.c.get(f'/p/{self.key}/modifier/').content.decode())
+
+    def test_xtimezone_column_added_to_old_database(self):
+        from . import schema
+        with connection.cursor() as c:
+            c.execute('ALTER TABLE pieces DROP COLUMN xtimezone')
+        schema._ok = False
+        schema.ensure()
+        with connection.cursor() as c:
+            c.execute("SELECT name, dflt_value FROM pragma_table_info('pieces') WHERE name = 'xtimezone'")
+            self.assertEqual(c.fetchall(), [('xtimezone', "'Europe/Paris'")])
+            c.execute('SELECT COUNT(*) FROM pieces WHERE xtimezone IS NOT NULL')
+            self.assertEqual(c.fetchone()[0], 0)                       # vide par défaut pour l'existant
+        self.assertIsNone(Piece.objects.get(key=self.key).xtimezone)
+
+    def test_keywords_helper(self):
+        self.assertEqual(helpers.choices('keywords'), ['corrosion', 'géothermie', 'nappe'])     # découpés sur « , » et « ; »
+        page = self.c.get(f'/p/{self.key}/modifier/').content.decode()
+        self.assertIn('data-multi="keywords"', page)
+        self.assertIn('id="multi-values"', page)
+        self.assertIn('multi.js', page)
+        entry = Piece.objects.get(key=self.key).to_entry()
+        self.c.post(f'/p/{self.key}/modifier/', self._post_data(entry, keywords='géothermie, corrosion;nouveau mot'), follow=True)
+        self.assertEqual(Piece.objects.get(key=self.key).keywords, 'géothermie, corrosion;nouveau mot')   # texte saisi conservé tel quel
+        self.assertIn('nouveau mot', helpers.choices('keywords'))
+        from .models import HelperValue
+        HelperValue.objects.filter(field='keywords').delete()
+        self.assertIn('nappe', helpers.choices('keywords'))                                       # champ multiple vide : rempli de nouveau
 
     def test_edit_validation(self):
         entry = Piece.objects.get(key=self.key).to_entry()

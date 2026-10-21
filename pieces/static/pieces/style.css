@@ -27,3 +27,15 @@ th { width: 10rem; }
 .field { display: flex; flex-direction: column; gap: .15rem; }
 .field input, .field textarea { font: inherit; padding: .35rem; width: 100%; box-sizing: border-box; }
 .markdown .page { text-align: center; border-top: 1px dashed var(--line); margin: 1.5rem 0; color: var(--muted); font-size: .8rem; }
+details.text > summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: .5rem; }
+details.text > summary::-webkit-details-marker { display: none; }
+details.text > summary::before { content: "▸"; color: var(--muted); }
+details.text[open] > summary::before { content: "▾"; }
+details.text > summary h2 { display: inline; }
+.datewrap { display: flex; gap: .5rem; align-items: center; }
+.datewrap input[type=date] { width: auto; flex: none; }
+.multiwrap { position: relative; display: block; }
+.suggest { position: absolute; z-index: 10; left: 0; right: 0; top: 100%; margin: 0; padding: 0; list-style: none;
+  background: Canvas; color: CanvasText; border: 1px solid var(--line); border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,.15); }
+.suggest li { padding: .25rem .5rem; cursor: pointer; }
+.suggest li.active, .suggest li:hover { background: rgba(27,106,201,.18); }

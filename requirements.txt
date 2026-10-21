@@ -1,3 +1,4 @@
 Django>=4.2
 markdown>=3.5
 nh3>=0.2.14
+tzdata>=2024.1

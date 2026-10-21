@@ -14,9 +14,11 @@
 {% if extras %}<h2>Autres champs</h2>
 <table>{% for e in extras %}<tr><th>{{ e.name }}</th><td><pre>{{ e.value }}</pre></td></tr>{% endfor %}</table>{% endif %}
 
-<h2>Texte <small>({{ size }} caractères)</small></h2>
-<div class="markdown">{{ body }}</div>
-{% if truncated %}<p><a href="?full=1">Afficher tout le texte</a></p>{% endif %}
+<details class="text"{% if request.GET.full %} open{% endif %}>
+  <summary><h2>Texte <small>({{ size }} caractères)</small></h2></summary>
+  <div class="markdown">{{ body }}</div>
+  {% if truncated %}<p><a href="?full=1">Afficher tout le texte</a></p>{% endif %}
+</details>
 
 {% if similar %}<h2>Documents proches</h2>
 <ul>{% for d, s in similar %}<li><a href="{% url 'detail' d.key %}">{{ d.title }}</a> <small>{{ s|floatformat:2 }}</small></li>{% endfor %}</ul>{% endif %}

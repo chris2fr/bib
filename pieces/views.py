@@ -9,7 +9,7 @@ from django.http import HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from frlib import BIBSET, SPECIAL
 
-from . import search
+from . import helpers, search
 from .audit import run_audit
 from .bibfmt import bib_text
 from .corpus import get_corpus
@@ -122,17 +122,21 @@ def edit(request, key):
     piece = get_object_or_404(Piece, key=key)
     entry = piece.to_entry()
     if request.method == 'POST':
-        form = PieceForm(request.POST)
+        form = PieceForm(request.POST, current_key=key)
         if form.is_valid():
             changed = piece.set_from_entry(form.build_entry(entry))
             if changed:
                 piece.save(update_fields=changed)
-                messages.success(request, 'Entrée enregistrée (modifié : ' + ', '.join(changed) + ').')
+                helpers.remember(piece)
+                msg = 'Entrée enregistrée (modifié : ' + ', '.join(changed) + ').'
+                if 'key' in changed:
+                    msg += f' Clé renommée : {key} → {piece.key}.' + (' shorthand mis à jour.' if form.shorthand_synced else '')
+                messages.success(request, msg)
             else:
                 messages.info(request, 'Aucun changement.')
             return redirect('detail', key=piece.key)
     else:
-        form = PieceForm.from_entry(entry)
+        form = PieceForm.from_entry(entry, current_key=key)
     return render(request, 'pieces/form.html', {'form': form, 'piece': piece, 'creating': False})
 
 
@@ -143,6 +147,7 @@ def create(request):
         if form.is_valid():
             piece = Piece.from_entry(form.build_entry(None))
             piece.save(force_insert=True)
+            helpers.remember(piece)
             messages.success(request, 'Entrée créée.')
             return redirect('detail', key=piece.key)
     else:

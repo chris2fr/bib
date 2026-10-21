@@ -3,6 +3,7 @@ from pathlib import Path
 
 from django.core.management.base import BaseCommand
 
+from pieces import schema
 from pieces.models import Piece
 
 
@@ -13,6 +14,7 @@ class Command(BaseCommand):
         parser.add_argument('path', nargs='?', help='fichier à écrire (ex. biblio.json)')
 
     def handle(self, *args, path, **options):
+        schema.ensure()
         data = {p.key: p.to_entry() for p in Piece.objects.order_by('n')}
         text = json.dumps(data, indent=2, ensure_ascii=False)
         if path:
