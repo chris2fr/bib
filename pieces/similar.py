@@ -63,7 +63,7 @@ class Similarity:
         return [(self.corpus.by_n[m], s) for m, s in best]
 
     def duplicates(self, threshold=0.85):
-        """Paires probablement identiques : texte très proche, même titre, même empreinte sha256, ou champ xduplicate."""
+        """Paires probablement identiques : texte très proche, même titre, même empreinte sha256, ou champ xduplicate ; les paires déjà déclarées par xdup sont écartées."""
         pairs = defaultdict(lambda: {'score': 0.0, 'reasons': []})
         for n in self.vec:
             for d, s in self.similar(n, k=5, min_score=threshold):
@@ -90,8 +90,11 @@ class Similarity:
                 p = pairs[(d.n, d.n)]
                 p['score'] = max(p['score'], 0.5)
                 p['reasons'].append(f'xduplicate : {d.v["xduplicate"]}')
+        declared = {frozenset((d.key, d.v['xdup'])) for d in self.corpus.docs if d.v.get('xdup')}
         out = []
         for (a, b), p in pairs.items():
+            if a != b and frozenset((self.corpus.by_n[a].key, self.corpus.by_n[b].key)) in declared:
+                continue                                  # doublon déjà déclaré (xdup) : plus à examiner
             out.append({'a': self.corpus.by_n[a], 'b': self.corpus.by_n[b] if a != b else None,
                         'score': p['score'], 'reasons': list(dict.fromkeys(p['reasons']))})
         out.sort(key=lambda x: (-x['score'], x['a'].key))

@@ -340,6 +340,117 @@ class AdvancedSearchTests(FrTestCase):
             self.assertIn(msg, r.content.decode(), params)
 
 
+class EnvFileTests(TestCase):
+    def test_env_file_is_loaded_without_overriding_the_environment(self):
+        import os
+        from unittest import mock
+
+        from bibman.env import load_env
+        with tempfile.TemporaryDirectory() as tmp:
+            f = Path(tmp) / 'custom.env'
+            f.write_text('# commentaire\nBIBMAN_TEST_A="deux mots"\nexport BIBMAN_TEST_B=fichier\nBIBMAN_TEST_C=fichier\n', encoding='utf-8')
+            with mock.patch.dict(os.environ, {'BIBMAN_ENV_FILE': str(f), 'BIBMAN_TEST_C': 'environnement'}):
+                self.assertEqual(load_env(tmp), f)
+                self.assertEqual(os.environ['BIBMAN_TEST_A'], 'deux mots')
+                self.assertEqual(os.environ['BIBMAN_TEST_B'], 'fichier')
+                self.assertEqual(os.environ['BIBMAN_TEST_C'], 'environnement')            # l'environnement l'emporte
+            for k in ('BIBMAN_TEST_A', 'BIBMAN_TEST_B'):
+                os.environ.pop(k, None)
+            (Path(tmp) / '.env').write_text('BIBMAN_TEST_D=racine\n', encoding='utf-8')
+            with mock.patch.dict(os.environ, {}, clear=False):
+                os.environ.pop('BIBMAN_ENV_FILE', None)
+                self.assertEqual(load_env(tmp), Path(tmp) / '.env')                      # par défaut : .env à la racine
+                self.assertEqual(os.environ.pop('BIBMAN_TEST_D'), 'racine')
+            empty = Path(tmp) / 'vide'
+            empty.mkdir()
+            self.assertIsNone(load_env(empty))                                           # pas de fichier : sans effet
+
+
+class DeclaredDuplicateTests(FrTestCase):
+    A, B = '2024-03-20-anteagroup-0001', '2024-03-20-anteagroup-0002'
+
+    def setUp(self):
+        super().setUp()
+        self.c = Client()
+
+    def declare(self, key, of):
+        return self.c.post('/doublons/declarer/', {'key': key, 'of': of}, follow=True)
+
+    def pair_keys(self):
+        return {frozenset([p['a'].key, p['b'].key]) for p in get_similarity().duplicates(0.85) if p['b']}
+
+    def test_declaring_removes_the_pair_and_shows_on_pages(self):
+        self.assertIn(frozenset([self.A, self.B]), self.pair_keys())
+        self.assertIn('declarer', self.c.get('/doublons/').content.decode())
+        self.assertIn(f'{self.B} déclaré doublon de {self.A}', self.declare(self.B, self.A).content.decode())
+        self.assertEqual(Piece.objects.get(key=self.B).xdup, self.A)
+        self.assertNotIn(frozenset([self.A, self.B]), self.pair_keys())                       # n'est plus à examiner
+        page = self.c.get('/doublons/').content.decode()
+        self.assertIn(f'{self.B}</a> → <a href="/p/{self.A}/">{self.A}', page)               # listé parmi les déclarés
+        self.assertIn('Doublon de', self.c.get(f'/p/{self.B}/').content.decode())
+        self.assertIn('Doublons déclarés de cette entrée', self.c.get(f'/p/{self.A}/').content.decode())
+        self.assertEqual([d.key for d, _, _ in search.search('has:xdup').ranked], [self.B])
+        self.assertEqual([d.key for d, _, _ in search.search(f'xdup:{self.A}').ranked], [self.B])
+        found = {c['id']: c['items'] for c in run_audit()}
+        self.assertEqual(found['xdup'], [])
+        self.c.post(f'/doublons/{self.B}/retirer/')
+        self.assertIsNone(Piece.objects.get(key=self.B).xdup)
+        self.assertIn(frozenset([self.A, self.B]), self.pair_keys())
+
+    def test_rules(self):
+        self.assertIn('Aucune entrée', self.declare(self.B, 'nope').content.decode())
+        self.assertIn('propre doublon', self.declare(self.B, self.B).content.decode())
+        self.declare(self.B, self.A)
+        self.assertIn('est elle-même un doublon de', self.declare('2008-00-00-acparisorg-0003', self.B).content.decode())   # pas de chaîne
+        self.assertIn('déjà la cible', self.declare(self.A, '2008-00-00-acparisorg-0003').content.decode())                  # A est cible de B
+        self.assertIsNone(Piece.objects.get(key=self.A).xdup)
+
+    def test_form_field_and_validation(self):
+        page = self.c.get(f'/p/{self.B}/modifier/').content.decode()
+        self.assertIn('name="xdup"', page)
+        self.assertIn(f'<option value="{self.A}">', page)                                      # proposé d'après la similarité
+        entry = Piece.objects.get(key=self.B).to_entry()
+        data = lambda **kw: {k: v.replace('\n', '\r\n') if isinstance(v, str) else v for k, v in
+                             {**PieceForm.from_entry(entry).initial, **kw}.items()}
+        self.assertIn('Aucune entrée', self.c.post(f'/p/{self.B}/modifier/', data(xdup='nope')).content.decode())
+        self.assertIn('propre doublon', self.c.post(f'/p/{self.B}/modifier/', data(xdup=self.B)).content.decode())
+        r = self.c.post(f'/p/{self.B}/modifier/', data(xdup=self.A), follow=True)
+        self.assertEqual(Piece.objects.get(key=self.B).xdup, self.A)
+        self.assertIn(f'/p/{self.A}/', r.content.decode())
+
+    def test_rename_follows_and_delete_is_refused(self):
+        self.declare(self.B, self.A)
+        entry = Piece.objects.get(key=self.A).to_entry()
+        data = {k: v.replace('\n', '\r\n') if isinstance(v, str) else v for k, v in
+                {**PieceForm.from_entry(entry).initial, 'key': '2024-03-20-anteagroup-0100'}.items()}
+        self.c.post(f'/p/{self.A}/modifier/', data, follow=True)
+        self.assertEqual(Piece.objects.get(key=self.B).xdup, '2024-03-20-anteagroup-0100')    # la cible renommée est suivie
+        self.assertIn('Suppression impossible', self.c.post('/p/2024-03-20-anteagroup-0100/supprimer/', follow=True).content.decode())
+        self.assertTrue(Piece.objects.filter(key='2024-03-20-anteagroup-0100').exists())
+        self.assertEqual([d.key for d, _, _ in search.search('xdup:anteagroup-0100').ranked], [self.B])
+
+    @override_settings(FR_READONLY=True)
+    def test_readonly(self):
+        self.assertEqual(self.declare(self.B, self.A).status_code, 403)
+        self.assertEqual(self.c.post(f'/doublons/{self.B}/retirer/').status_code, 403)
+        self.assertNotIn('declarer', self.c.get('/doublons/').content.decode())
+
+    def test_audit_flags_broken_declarations(self):
+        Piece.objects.filter(key=self.B).update(xdup='gone')
+        Piece.objects.filter(key=self.A).update(xdup=self.A)
+        bump()
+        found = {c['id']: [d.key for d, _ in c['items']] for c in run_audit()}
+        self.assertEqual(sorted(found['xdup']), sorted([self.A, self.B]))
+
+    def test_xdup_column_added_to_old_database(self):
+        from . import schema
+        with connection.cursor() as c:
+            c.execute('ALTER TABLE pieces DROP COLUMN xdup')
+        schema._ok = False
+        schema.ensure()
+        self.assertIsNone(Piece.objects.get(key=self.A).xdup)
+
+
 class SourceFilesTests(FrTestCase):
     key = '1997-05-00-brgmfr-39522'
 

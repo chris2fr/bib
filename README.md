@@ -19,7 +19,7 @@ synonyms.txt       synonymes de la recherche
 
 ```sh
 python -m venv .venv && . .venv/bin/activate
-pip install -r requirements.txt            # Django, markdown, nh3
+pip install -r requirements.txt            # Django, markdown, nh3, tzdata, python-dotenv
 python manage.py loadjson biblio.json      # construit biblio.db (--force pour remplacer une base existante)
 python manage.py runserver                 # http://127.0.0.1:8000
 python manage.py test                      # tests
@@ -85,6 +85,13 @@ par ordre alphabétique ; sans paramètre, tout est alphabétique. L'ordre n'est
 automatiquement au premier accès, ce qui demande SQLite ≥ 3.35), un champ vide équivaut à un champ absent, et réécrire un
 `fr.json` ne reproduit donc plus l'ordre d'origine des clés.
 
+**Doublons** : un doublon est parfois nécessaire (d'anciens documents le citent). Le champ **`xdup`** d'une entrée donne la clé d'une
+autre entrée dont elle est le doublon ; il se saisit dans le formulaire (clés proches proposées) ou en un clic depuis la page
+Doublons (« gauche = doublon de droite »). Règles : la clé doit exister, ce n'est pas l'entrée elle-même, la cible n'est pas un
+doublon (une seule couche) et une entrée citée comme cible ne peut pas devenir doublon. Une paire déclarée quitte la liste des
+doublons probables et figure dans « Doublons déclarés » ; renommer la cible met `xdup` à jour, la supprimer est refusée tant que des
+doublons la citent, et l'audit signale les `xdup` invalides. `xduplicate` reste un champ libre, comme avant.
+
 **Fichiers sources** : le dossier `BIBMAN_FILES` (défaut `./files`) contient les documents d'origine. Le fichier d'une entrée est
 celui que nomme son champ `file` (nom seul, **sans dossier** : refusé à l'enregistrement s'il contient `/` ou `\`), à défaut
 `<clé>.pdf`. La fiche et la liste y renvoient (`/p/<clé>/fichier/` : PDF et images affichés, autres types téléchargés) ; le formulaire
@@ -112,11 +119,28 @@ existantes ; pour ajouter une valeur, remplissez le champ « nouvelle valeur » 
 est ajoutée à la liste à l'enregistrement. Supprimer la table `helper_values` la fait reconstruire depuis les données.
 `FR_READONLY=1` désactive création, modification et suppression.
 
-## Réglages (variables d'environnement)
+## Réglages (variables d'environnement et `.env`)
 
-`FR_DB` · `BIBMAN_FILES` · `BIBMAN_ORDER_BIBTEX` · `BIBMAN_ORDER_OTHER` · `FR_TOOLS_LIB` (dossier de `frlib.py` et `json2db.py`, défaut `outils/lib`) · `FR_SYNONYMS` · `FR_READONLY` ·
-`DJANGO_SECRET_KEY` · `DJANGO_DEBUG` · `DJANGO_ALLOWED_HOSTS`. Pour autre chose qu'un usage local, définissez une vraie
-clé secrète, `DJANGO_DEBUG=0` et servez les fichiers statiques (`collectstatic`) ; il n'y a pas d'authentification.
+Tous les réglages sont des variables d'environnement, lues dans `bibman/settings.py` (et, pour l'ordre des champs, dans
+`outils/lib/frlib.py`). Elles peuvent aussi être écrites dans un fichier **`.env`** à la racine du projet (lignes `CLÉ=valeur`,
+commentaires `#`, guillemets possibles) ou dans le fichier que désigne `BIBMAN_ENV_FILE`. Une variable déjà présente dans
+l'environnement l'emporte sur le fichier. Partez de `.env.example`, qui liste tout ; `.env` n'est pas versionné.
+
+| Variable | Rôle | Défaut |
+|---|---|---|
+| `FR_DB` | base SQLite | `./biblio.db` |
+| `BIBMAN_FILES` | dossier des fichiers sources | `./files` |
+| `FR_SYNONYMS` | fichier de synonymes | `./synonyms.txt` |
+| `FR_TOOLS_LIB` | dossier de `frlib.py` et `json2db.py` | `./outils/lib` |
+| `BIBMAN_ORDER_BIBTEX`, `BIBMAN_ORDER_OTHER` | ordre des champs (voir Édition) | alphabétique |
+| `FR_READONLY` | `1` = consultation seule | désactivé |
+| `DJANGO_DEBUG` | `0` en production | `1` |
+| `DJANGO_SECRET_KEY` | clé secrète | clé de développement |
+| `DJANGO_ALLOWED_HOSTS` | hôtes autorisés, séparés par des virgules | localhost |
+| `BIBMAN_STATIC_ROOT` | destination de `collectstatic` | `./staticfiles` |
+
+Pour autre chose qu'un usage local, définissez une vraie clé secrète, `DJANGO_DEBUG=0` et servez les fichiers statiques
+(`collectstatic`) ; il n'y a pas d'authentification.
 
 ## Tests
 

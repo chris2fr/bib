@@ -4,7 +4,7 @@ import re
 from django import forms
 from frlib import BIB, BIBSET, SPECIAL, check_braces, put_field, set_bibtex, sort_fields
 
-from . import files, helpers
+from . import dups, files, helpers
 from .dates import check_date, check_time, check_timezone, is_full_date, make_datetime, timezones
 from .models import Piece
 
@@ -28,6 +28,7 @@ class PieceForm(forms.Form):
         self.current_key = current_key            # clé actuelle de l'entrée éditée (None à la création)
         self.shorthand_synced = False
         self.file_names = files.names()
+        self.xdup_candidates = []                 # (clé, titre) proposés pour xdup, fournis par la vue
         self.multi_values = {f: helpers.choices(f) for f in helpers.MULTI_FIELDS}
         self.fields['key'] = forms.CharField(
             label='Clé (ID)', strip=True,
@@ -44,6 +45,8 @@ class PieceForm(forms.Form):
                                                 'pattern': r'\d{4}-\d{2}-\d{2}', 'title': 'AAAA-MM-JJ, MM et JJ peuvent valoir 00'})
             if f in helpers.MULTI_FIELDS:         # complétion pendant la frappe (multi.js)
                 widget = forms.Textarea(attrs={'rows': LONG.get(f, 2), 'data-multi': f, 'autocomplete': 'off'})
+            if f == 'xdup':
+                widget = forms.TextInput(attrs={'list': 'xdup-list', 'autocomplete': 'off', 'placeholder': 'clé de l\'entrée de référence'})
             if f == 'file':
                 widget = forms.TextInput(attrs={'list': 'files-list', 'autocomplete': 'off', 'placeholder': 'par défaut : <clé>.pdf'})
             if f == 'xtime':
@@ -54,6 +57,7 @@ class PieceForm(forms.Form):
             self.fields[f] = forms.CharField(label=f, required=False, strip=False, widget=widget,
                                              help_text={'date': DATE_HELP, 'xtime': TIME_HELP,
                                                         'xtimezone': 'Facultatif ; vide = heure sans fuseau.',
+                        'xdup': 'Clé d\'une autre entrée dont celle-ci est le doublon (gardé car cité par d\'anciens documents). Vide : pas un doublon.',
                         'file': 'Nom du fichier dans BIBMAN_FILES, sans dossier. Vide : <clé>.pdf.',
                         'keywords': 'Séparés par des virgules ; les mots-clés déjà connus sont proposés pendant la frappe.'}.get(f, ''))
             if f in helpers.HELPER_FIELDS:
@@ -111,6 +115,13 @@ class PieceForm(forms.Form):
         value = (self.cleaned_data.get('file') or '').strip()
         if value and not files.safe_name(value):
             raise forms.ValidationError('Nom de fichier seul, sans dossier (ni / ni \\) : le dossier est BIBMAN_FILES.')
+        return value
+
+    def clean_xdup(self):
+        value = (self.cleaned_data.get('xdup') or '').strip()
+        error = dups.xdup_error(self.cleaned_data.get('key') or self.current_key, value, self.current_key) if value else None
+        if error:
+            raise forms.ValidationError(error)
         return value
 
     def clean_xtime(self):

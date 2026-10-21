@@ -47,6 +47,7 @@ class Piece(models.Model):
     archive = models.TextField(null=True, blank=True)
     edition = models.TextField(null=True, blank=True)
     xduplicate = models.TextField(null=True, blank=True)
+    xdup = models.TextField(null=True, blank=True)
     shorthand2 = models.TextField(null=True, blank=True)
     extra = models.TextField(default='{}')
     bibtex = models.TextField(null=True, blank=True)

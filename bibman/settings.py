@@ -1,6 +1,6 @@
 """Réglages du site de gestion de fr.json.
 
-Variables d'environnement :
+Variables d'environnement (ou lignes CLÉ=valeur d'un fichier .env à la racine, voir .env.example ; l'environnement l'emporte) :
   FR_DB          base SQLite produite par « manage.py loadjson » (défaut : ./biblio.db)
   FR_TOOLS_LIB   dossier contenant frlib.py et json2db.py (défaut : ./outils/lib)
   FR_SYNONYMS    fichier de synonymes (défaut : ./synonyms.txt)
@@ -14,7 +14,10 @@ import os
 import sys
 from pathlib import Path
 
+from .env import load_env
+
 BASE_DIR = Path(__file__).resolve().parent.parent
+ENV_FILE = load_env(BASE_DIR)          # doit précéder toute lecture de os.environ ci-dessous
 
 FR_TOOLS_LIB = Path(os.environ.get('FR_TOOLS_LIB', BASE_DIR / 'outils' / 'lib')).resolve()
 if str(FR_TOOLS_LIB) not in sys.path:

@@ -52,6 +52,7 @@ FIELD_ALIASES = {
     'note': 'note', 'abstract': 'abstract', 'resume': 'abstract', 'url': 'url', 'file': 'file', 'fichier': 'file',
     'key': 'key', 'cle': 'key', 'id': 'key', 'year': 'year', 'annee': 'year', 'an': 'year', 'date': 'date',
     'avant': 'before', 'before': 'before', 'apres': 'after', 'after': 'after', 'depuis': 'since', 'since': 'since',
+    'xdup': 'xdup', 'doublon': 'xdup',
     'has': 'has', 'no': 'no', 'sans': 'no',
 }
 EQUALITY_FIELDS = {'xtheme', 'xtype', 'xacronym', 'type', 'language', 'entrytype'}

@@ -12,7 +12,7 @@ import os
 BIB = ['title', 'author', 'abstract', 'note', 'number', 'organization', 'type', 'xtype', 'keywords', 'xtheme',
        'date', 'year', 'language', 'xcounter', 'xacronym', 'shorthand', 'url', 'howpublished', 'xtime', 'xdatetime', 'xtimezone',
        'file', 'publisher', 'urldate', 'annote', 'volume', 'medium', 'issue', 'collection', 'archive', 'edition',
-       'xduplicate', 'shorthand2']
+       'xduplicate', 'xdup', 'shorthand2']
 BIBSET = frozenset(BIB)
 SPECIAL = frozenset(['key', 'ENTRYTYPE', 'markdown', 'bibtex'])
 _TAIL = ('markdown', 'bibtex')

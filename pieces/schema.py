@@ -14,6 +14,8 @@ def ensure():
         cols = {r[0] for r in c.fetchall()}
         if not cols:
             return
+        if 'xdup' not in cols:
+            c.execute('ALTER TABLE pieces ADD COLUMN xdup TEXT')
         if 'xtimezone' not in cols:
             c.execute("ALTER TABLE pieces ADD COLUMN xtimezone TEXT DEFAULT 'Europe/Paris'")
             c.execute('UPDATE pieces SET xtimezone = NULL')      # les entrées existantes n'ont pas de fuseau (vide par défaut)
