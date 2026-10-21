@@ -1,0 +1,12 @@
+# Synonymes et acronymes pour la recherche heuristique.
+# Une ligne = un groupe de termes équivalents, séparés par « = ». Casse et accents sont ignorés.
+# Un terme de plusieurs mots est cherché comme une expression exacte.
+# Exemples de départ : adaptez-les à votre corpus (le fichier est relu automatiquement quand il change).
+brgm = bureau de recherches geologiques et minieres
+ademe = agence de la transition ecologique = agence de l'environnement et de la maitrise de l'energie
+cada = commission d'acces aux documents administratifs
+crpa = code des relations entre le public et l'administration
+dsp = delegation de service public
+sipperec = syndicat intercommunal de la peripherie de paris pour les energies et les reseaux de communication
+geothermie = geothermal = geothermique
+nappe = aquifere
