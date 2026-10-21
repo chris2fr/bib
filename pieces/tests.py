@@ -222,6 +222,78 @@ class SimilarAuditTests(FrTestCase):
         self.assertNotIn('1997-05-00-brgmfr-39522', found['year'])
 
 
+class SourceFilesTests(FrTestCase):
+    key = '1997-05-00-brgmfr-39522'
+
+    def setUp(self):
+        super().setUp()
+        self.c = Client()
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.dir = Path(self.tmp.name)
+        patcher = override_settings(BIBMAN_FILES=self.dir)
+        patcher.enable()
+        self.addCleanup(patcher.disable)
+
+    def test_locate_prefers_file_property_then_key_pdf(self):
+        from . import files
+        self.assertIsNone(files.locate(self.key, None))
+        (self.dir / f'{self.key}.pdf').write_bytes(b'%PDF-key')
+        self.assertEqual((files.locate(self.key, None).name, files.locate(self.key, None).via), (f'{self.key}.pdf', 'key'))
+        (self.dir / 'rapport.pdf').write_bytes(b'%PDF-prop')
+        loc = files.locate(self.key, 'rapport.pdf')
+        self.assertEqual((loc.name, loc.via), ('rapport.pdf', 'file'))
+        self.assertEqual(files.locate(self.key, 'absent.pdf').via, 'key')           # champ file introuvable : repli sur <clé>.pdf
+        for bad in ['../x.pdf', 'a/b.pdf', 'a\\b.pdf', '..', '/etc/passwd']:
+            self.assertFalse(files.safe_name(bad), bad)
+            self.assertIsNone(files.locate('zzz', bad))
+        self.assertEqual(files.expected_name(self.key, '../x'), f'{self.key}.pdf')
+
+    def test_serving_and_detail(self):
+        html = self.c.get(f'/p/{self.key}/').content.decode()
+        self.assertIn('introuvable dans', html)                                      # dossier présent, fichier absent
+        self.assertEqual(self.c.get(f'/p/{self.key}/fichier/').status_code, 404)
+        (self.dir / 'rapport.pdf').write_bytes(b'%PDF-prop')
+        Piece.objects.filter(key=self.key).update(file='rapport.pdf')
+        bump()                                                                        # update() ne passe pas par les signaux
+        html = self.c.get(f'/p/{self.key}/').content.decode()
+        self.assertIn(f'/p/{self.key}/fichier/', html)
+        r = self.c.get(f'/p/{self.key}/fichier/')
+        self.assertEqual((r.status_code, r['Content-Type'], b''.join(r.streaming_content)), (200, 'application/pdf', b'%PDF-prop'))
+        self.assertTrue(r['Content-Disposition'].startswith('inline'))
+        self.assertTrue(self.c.get(f'/p/{self.key}/fichier/?download=1')['Content-Disposition'].startswith('attachment'))
+        self.assertIn('fichier</a>', self.c.get('/?q=brgmfr-39522').content.decode())     # lien dans la liste
+        (self.dir / 'page.html').write_text('<script>alert(1)</script>')
+        Piece.objects.filter(key=self.key).update(file='page.html')
+        r = self.c.get(f'/p/{self.key}/fichier/')
+        self.assertTrue(r['Content-Disposition'].startswith('attachment'))                # jamais de HTML affiché sur le site
+        Piece.objects.filter(key=self.key).update(file='../secret.txt')
+        self.assertEqual(self.c.get(f'/p/{self.key}/fichier/').status_code, 404)
+        with override_settings(BIBMAN_FILES=self.dir / 'nope'):
+            self.assertIn('BIBMAN_FILES', self.c.get(f'/p/{self.key}/').content.decode())
+
+    def test_form_validation_datalist_and_warning(self):
+        (self.dir / 'rapport.pdf').write_bytes(b'x')
+        entry = Piece.objects.get(key=self.key).to_entry()
+        page = self.c.get(f'/p/{self.key}/modifier/').content.decode()
+        self.assertIn('<datalist id="files-list">', page)
+        self.assertIn('<option value="rapport.pdf">', page)
+        post = lambda **kw: self.c.post(f'/p/{self.key}/modifier/', {**dict(PieceForm.from_entry(entry).initial), **kw}, follow=True)
+        self.assertIn('sans dossier', post(file='scans/rapport.pdf').content.decode())
+        self.assertIn('sans dossier', post(file='..\\rapport.pdf').content.decode())
+        self.assertNotIn('introuvable', post(file='rapport.pdf').content.decode())
+        self.assertEqual(Piece.objects.get(key=self.key).file, 'rapport.pdf')
+        self.assertIn('Fichier « absent.pdf » introuvable', post(file='absent.pdf').content.decode())
+
+    def test_audit_file_checks(self):
+        Piece.objects.filter(key=self.key).update(file='scans/rapport.pdf')
+        Piece.objects.filter(key='2015-00-00-sigesfr-dogger').update(file='absent.pdf')
+        bump()
+        found = {c['id']: [d.key for d, _ in c['items']] for c in run_audit()}
+        self.assertEqual(found['file-path'], [self.key])
+        self.assertEqual(found['file-missing'], ['2015-00-00-sigesfr-dogger'])
+
+
 class ViewTests(FrTestCase):
     def setUp(self):
         super().setUp()

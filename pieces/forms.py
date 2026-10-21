@@ -4,7 +4,7 @@ import re
 from django import forms
 from frlib import BIB, BIBSET, SPECIAL, check_braces, put_field, set_bibtex
 
-from . import helpers
+from . import files, helpers
 from .dates import check_date, check_time, check_timezone, is_full_date, make_datetime, timezones
 from .models import Piece
 
@@ -27,6 +27,7 @@ class PieceForm(forms.Form):
         self.creating = creating
         self.current_key = current_key            # clé actuelle de l'entrée éditée (None à la création)
         self.shorthand_synced = False
+        self.file_names = files.names()
         self.multi_values = {f: helpers.choices(f) for f in helpers.MULTI_FIELDS}
         self.fields['key'] = forms.CharField(
             label='Clé (ID)', strip=True,
@@ -43,6 +44,8 @@ class PieceForm(forms.Form):
                                                 'pattern': r'\d{4}-\d{2}-\d{2}', 'title': 'AAAA-MM-JJ, MM et JJ peuvent valoir 00'})
             if f in helpers.MULTI_FIELDS:         # complétion pendant la frappe (multi.js)
                 widget = forms.Textarea(attrs={'rows': LONG.get(f, 2), 'data-multi': f, 'autocomplete': 'off'})
+            if f == 'file':
+                widget = forms.TextInput(attrs={'list': 'files-list', 'autocomplete': 'off', 'placeholder': 'par défaut : <clé>.pdf'})
             if f == 'xtime':
                 widget = forms.TextInput(attrs={'placeholder': 'HH:MM', 'maxlength': 5, 'inputmode': 'numeric',
                                                 'pattern': r'([01]\d|2[0-3]):[0-5]\d', 'title': 'HH:MM, de 00:00 à 23:59'})
@@ -51,6 +54,7 @@ class PieceForm(forms.Form):
             self.fields[f] = forms.CharField(label=f, required=False, strip=False, widget=widget,
                                              help_text={'date': DATE_HELP, 'xtime': TIME_HELP,
                                                         'xtimezone': 'Facultatif ; vide = heure sans fuseau.',
+                        'file': 'Nom du fichier dans BIBMAN_FILES, sans dossier. Vide : <clé>.pdf.',
                         'keywords': 'Séparés par des virgules ; les mots-clés déjà connus sont proposés pendant la frappe.'}.get(f, ''))
             if f in helpers.HELPER_FIELDS:
                 self._helper(f)
@@ -102,6 +106,12 @@ class PieceForm(forms.Form):
         if error:
             raise forms.ValidationError(error)
         return date
+
+    def clean_file(self):
+        value = (self.cleaned_data.get('file') or '').strip()
+        if value and not files.safe_name(value):
+            raise forms.ValidationError('Nom de fichier seul, sans dossier (ni / ni \\) : le dossier est BIBMAN_FILES.')
+        return value
 
     def clean_xtime(self):
         value = (self.cleaned_data.get('xtime') or '').strip()

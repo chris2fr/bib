@@ -226,3 +226,4 @@ biblio.db-*
 biblio.sqlite
 biblio.json
 staticfiles/
+files/

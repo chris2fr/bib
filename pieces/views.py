@@ -1,15 +1,17 @@
 import functools
 import json
+import mimetypes
 
 from django.conf import settings
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db import DatabaseError
-from django.http import HttpResponse, HttpResponseForbidden
+from django.http import FileResponse, Http404, HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from frlib import BIBSET, SPECIAL
 
-from . import helpers, search
+from . import files, helpers, search
 from .audit import run_audit
 from .bibfmt import bib_text
 from .corpus import get_corpus
@@ -58,7 +60,7 @@ def list_view(request):
     page = Paginator(out.ranked, PER_PAGE).get_page(request.GET.get('page'))
     snips = search.snippets([d.n for d, _, _ in page], out.highlight)
     items = [{'doc': d, 'score': s, 'count': c, 'snippet': snips.get(d.n),
-              'abstract': (d.v['abstract'] or '')[:260]} for d, s, c in page]
+              'abstract': (d.v['abstract'] or '')[:260], 'has_file': bool(files.locate(d.key, d.v['file']))} for d, s, c in page]
     params = request.GET.copy()
     params.pop('page', None)
     facets_ui, chips = [], []
@@ -113,9 +115,37 @@ def detail(request, key):
         similar = []
     return render(request, 'pieces/detail.html', {
         'piece': piece, 'entry': entry, 'rows': rows, 'extras': extras, 'body': body, 'truncated': truncated,
-        'size': len(piece.markdown), 'bib': bib_text(entry), 'similar': similar,
+        'size': len(piece.markdown), 'source': source_info(piece), 'bib': bib_text(entry), 'similar': similar,
         'raw': json.dumps({k: v for k, v in entry.items() if k != 'markdown'}, ensure_ascii=False, indent=2),
     })
+
+
+def source_info(piece):
+    """Fichier source pour la fiche : trouvé (lien), introuvable dans le dossier, ou dossier absent."""
+    loc = files.locate(piece.key, piece.file)
+    if loc:
+        return {'state': 'found', 'name': loc.name, 'via': loc.via, 'url': reverse('source_file', args=[piece.key])}
+    return {'state': 'missing' if files.folder().is_dir() else 'nofolder', 'name': files.expected_name(piece.key, piece.file),
+            'folder': files.folder()}
+
+
+INLINE = ('application/pdf', 'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'text/plain')
+
+
+def source_file(request, key):
+    """Sert le fichier source (PDF affiché dans le navigateur ; les autres types sont téléchargés)."""
+    piece = get_object_or_404(Piece, key=key)
+    loc = files.locate(piece.key, piece.file)
+    if not loc:
+        raise Http404('Fichier source introuvable')
+    ctype = mimetypes.guess_type(loc.name)[0] or 'application/octet-stream'
+    return FileResponse(open(loc.path, 'rb'), content_type=ctype, filename=loc.name,
+                        as_attachment=ctype not in INLINE or request.GET.get('download') == '1')
+
+
+def warn_if_file_missing(request, piece):
+    if piece.file and files.folder().is_dir() and not files.locate(piece.key, piece.file):
+        messages.warning(request, f'Fichier « {piece.file} » introuvable dans le dossier BIBMAN_FILES.')
 
 
 @writable
@@ -133,6 +163,7 @@ def edit(request, key):
                 if 'key' in changed:
                     msg += f' Clé renommée : {key} → {piece.key}.' + (' shorthand mis à jour.' if form.shorthand_synced else '')
                 messages.success(request, msg)
+                warn_if_file_missing(request, piece)
             else:
                 messages.info(request, 'Aucun changement.')
             return redirect('detail', key=piece.key)
@@ -150,6 +181,7 @@ def create(request):
             piece.save(force_insert=True)
             helpers.remember(piece)
             messages.success(request, 'Entrée créée.')
+            warn_if_file_missing(request, piece)
             return redirect('detail', key=piece.key)
     else:
         form = PieceForm(creating=True)

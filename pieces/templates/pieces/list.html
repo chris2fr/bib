@@ -39,7 +39,7 @@
   {% for it in items %}
   <article>
     <h2><a href="{% url 'detail' it.doc.key %}">{{ it.doc.title }}</a></h2>
-    <p class="meta"><code>{{ it.doc.key }}</code>{% if it.doc.v.author %} · {{ it.doc.v.author }}{% endif %}{% if it.doc.v.xtheme %} · {{ it.doc.v.xtheme }}{% endif %}</p>
+    <p class="meta"><code>{{ it.doc.key }}</code>{% if it.doc.v.author %} · {{ it.doc.v.author }}{% endif %}{% if it.doc.v.xtheme %} · {{ it.doc.v.xtheme }}{% endif %}{% if it.has_file %} · <a href="{% url 'source_file' it.doc.key %}">📄 fichier</a>{% endif %}</p>
     {% if it.snippet %}<p class="snippet">{{ it.snippet }}</p>{% elif it.abstract %}<p class="snippet">{{ it.abstract }}</p>{% endif %}
   </article>
   {% empty %}<p>Aucun résultat.</p>{% endfor %}

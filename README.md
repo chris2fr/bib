@@ -77,6 +77,12 @@ cohérence entre la clé `AAAA-MM-JJ-acronyme-compteur` et `year`, `date`, `xacr
 Formulaire pour les champs BibTeX (valeurs de base), les autres champs (JSON), les surcharges du .bib (JSON ; `null` supprime un
 champ du .bib) et le markdown. Contrôles : accolades équilibrées (sinon l'export .bib échouerait), JSON valide, champs réservés,
 clé unique. Les retours à la ligne des navigateurs (CRLF) sont normalisés : enregistrer sans rien changer ne modifie rien.
+**Fichiers sources** : le dossier `BIBMAN_FILES` (défaut `./files`) contient les documents d'origine. Le fichier d'une entrée est
+celui que nomme son champ `file` (nom seul, **sans dossier** : refusé à l'enregistrement s'il contient `/` ou `\`), à défaut
+`<clé>.pdf`. La fiche et la liste y renvoient (`/p/<clé>/fichier/` : PDF et images affichés, autres types téléchargés) ; le formulaire
+propose les noms présents dans le dossier et prévient si le fichier est introuvable ; l'audit signale les champs `file` contenant un
+dossier ou pointant vers un fichier absent.
+
 **Heure et fuseau** : `xtime` est au format `HH:MM` (00:00–23:59). `xtimezone` se choisit dans la liste des fuseaux IANA
 (vide par défaut ; la colonne a pour valeur par défaut SQL `Europe/Paris`, mais l'application écrit NULL quand rien n'est choisi,
 et une base existante reçoit la colonne vide au premier accès). `xdatetime` est calculé, comme `year` : il combine la date
@@ -100,7 +106,7 @@ est ajoutée à la liste à l'enregistrement. Supprimer la table `helper_values`
 
 ## Réglages (variables d'environnement)
 
-`FR_DB` · `FR_TOOLS_LIB` (dossier de `frlib.py` et `json2db.py`, défaut `outils/lib`) · `FR_SYNONYMS` · `FR_READONLY` ·
+`FR_DB` · `BIBMAN_FILES` · `FR_TOOLS_LIB` (dossier de `frlib.py` et `json2db.py`, défaut `outils/lib`) · `FR_SYNONYMS` · `FR_READONLY` ·
 `DJANGO_SECRET_KEY` · `DJANGO_DEBUG` · `DJANGO_ALLOWED_HOSTS`. Pour autre chose qu'un usage local, définissez une vraie
 clé secrète, `DJANGO_DEBUG=0` et servez les fichiers statiques (`collectstatic`) ; il n'y a pas d'authentification.
 

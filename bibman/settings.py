@@ -4,6 +4,7 @@ Variables d'environnement :
   FR_DB          base SQLite produite par « manage.py loadjson » (défaut : ./biblio.db)
   FR_TOOLS_LIB   dossier contenant frlib.py et json2db.py (défaut : ./outils/lib)
   FR_SYNONYMS    fichier de synonymes (défaut : ./synonyms.txt)
+  BIBMAN_FILES   dossier des fichiers sources, ${CLÉ}.pdf ou le nom donné par le champ file (défaut : ./files)
   FR_READONLY    1 = consultation seule (pas de création, modification ni suppression)
   DJANGO_SECRET_KEY, DJANGO_DEBUG (1 par défaut), DJANGO_ALLOWED_HOSTS (liste séparée par des virgules)
 Ne lancez pas « manage.py migrate » : l'application n'a aucune migration et la base appartient aux scripts json2db / db2json.
@@ -20,6 +21,7 @@ if str(FR_TOOLS_LIB) not in sys.path:
 
 FR_DB = Path(os.environ.get('FR_DB', BASE_DIR / 'biblio.db')).resolve()
 FR_SYNONYMS = Path(os.environ.get('FR_SYNONYMS', BASE_DIR / 'synonyms.txt'))
+BIBMAN_FILES = Path(os.environ.get('BIBMAN_FILES', BASE_DIR / 'files')).resolve()
 FR_READONLY = os.environ.get('FR_READONLY', '') == '1'
 
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'dev-only-change-me')

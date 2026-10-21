@@ -2,6 +2,7 @@
 import re
 from collections import OrderedDict
 
+from . import files
 from .corpus import get_corpus
 from .dates import check_time, check_timezone, make_datetime
 
@@ -19,6 +20,8 @@ CHECKS = OrderedDict([
     ('time-format', 'Heure xtime mal formée (attendu HH:MM)'),
     ('timezone', 'Fuseau xtimezone inconnu'),
     ('datetime', 'xdatetime différent de date + xtime + xtimezone'),
+    ('file-path', 'Champ file avec un dossier (attendu : nom de fichier seul)'),
+    ('file-missing', 'Fichier du champ file absent du dossier BIBMAN_FILES'),
     ('missing-title', 'Titre absent'),
     ('missing-date', 'Date absente'),
 ])
@@ -26,6 +29,7 @@ CHECKS = OrderedDict([
 
 def run_audit():
     corpus = get_corpus()
+    folder_ok = files.folder().is_dir()
     found = OrderedDict((k, []) for k in CHECKS)
     for d in corpus.docs:
         v = d.v
@@ -59,6 +63,10 @@ def run_audit():
         expected = make_datetime(d.date, v['xtime'], v['xtimezone'])
         if expected and v['xdatetime'] != expected:
             found['datetime'].append((d, f'attendu {expected}, xdatetime {v["xdatetime"] or "(vide)"}'))
+        if v['file'] and not files.safe_name(v['file'].strip()):
+            found['file-path'].append((d, v['file']))
+        elif v['file'] and folder_ok and not files.locate(d.key, v['file']):
+            found['file-missing'].append((d, v['file']))
         if not v['title']:
             found['missing-title'].append((d, ''))
         if not d.date:

@@ -6,6 +6,13 @@
   · <a href="{% url 'piece_bib' piece.key %}">.bib</a>
   {% if not readonly %}· <a href="{% url 'edit' piece.key %}">Modifier</a> · <a href="{% url 'delete' piece.key %}">Supprimer</a>{% endif %}</p>
 
+<p class="source">
+{% if source.state == 'found' %}📄 <a href="{{ source.url }}">{{ source.name }}</a>{% if source.via == 'key' %} <small>(<code>&lt;clé&gt;.pdf</code> : le champ file {% if piece.file %}« {{ piece.file }} » est introuvable{% else %}est vide{% endif %})</small>{% endif %}
+· <a href="{{ source.url }}?download=1">télécharger</a>
+{% elif source.state == 'missing' %}📄 <small>Fichier source « {{ source.name }} » introuvable dans <code>{{ source.folder }}</code>.</small>
+{% else %}<small>Dossier des fichiers sources introuvable : <code>{{ source.folder }}</code> (variable <code>BIBMAN_FILES</code>).</small>{% endif %}
+</p>
+
 <h2>Champs BibTeX</h2>
 <table>
 {% for r in rows %}<tr><th>{{ r.name }}</th><td>{{ r.value }}{% if r.base %}<br><small>base : {{ r.base }}</small>{% endif %}</td><td><small>{{ r.origin }}</small></td></tr>{% endfor %}
