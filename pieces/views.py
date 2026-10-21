@@ -12,10 +12,10 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from frlib import BIBSET, SPECIAL, sort_fields
 
-from . import files, helpers, search
+from . import dups, files, helpers, search
 from .audit import run_audit
 from .bibfmt import bib_text
-from .corpus import get_corpus
+from .corpus import bump, get_corpus
 from .forms import AdvancedSearchForm, PieceForm
 from .models import Piece
 from .render import render_markdown
@@ -116,7 +116,8 @@ def detail(request, key):
         similar = []
     return render(request, 'pieces/detail.html', {
         'piece': piece, 'entry': entry, 'rows': rows, 'extras': extras, 'body': body, 'truncated': truncated,
-        'size': len(piece.markdown), 'source': source_info(piece), 'bib': bib_text(entry), 'similar': similar,
+        'size': len(piece.markdown), 'source': source_info(piece), 'dup_refs': dups.referrers(piece.key),
+        'dup_of': Piece.objects.filter(key=piece.xdup).values('key', 'title').first() if piece.xdup else None, 'bib': bib_text(entry), 'similar': similar,
         'raw': json.dumps({k: v for k, v in entry.items() if k != 'markdown'}, ensure_ascii=False, indent=2),
     })
 
@@ -149,6 +150,17 @@ def warn_if_file_missing(request, piece):
         messages.warning(request, f'Fichier « {piece.file} » introuvable dans le dossier BIBMAN_FILES.')
 
 
+def dup_candidates(piece):
+    """[(clé, titre)] des entrées proches de piece (texte ou titre), proposées pour xdup."""
+    if piece is None:
+        return []
+    try:
+        close = [d for d, _ in get_similarity().similar(piece.n, 10, 0.05)]
+    except DatabaseError:
+        close = []
+    return [(d.key, d.title) for d in close]
+
+
 @writable
 def edit(request, key):
     piece = get_object_or_404(Piece, key=key)
@@ -160,6 +172,9 @@ def edit(request, key):
             if changed:
                 piece.save(update_fields=changed)
                 helpers.remember(piece)
+                if 'key' in changed:                                  # les doublons déclarés suivent la clé renommée
+                    Piece.objects.filter(xdup=key).update(xdup=piece.key)
+                    bump()
                 msg = 'Entrée enregistrée (modifié : ' + ', '.join(changed) + ').'
                 if 'key' in changed:
                     msg += f' Clé renommée : {key} → {piece.key}.' + (' shorthand mis à jour.' if form.shorthand_synced else '')
@@ -170,6 +185,7 @@ def edit(request, key):
             return redirect('detail', key=piece.key)
     else:
         form = PieceForm.from_entry(entry, current_key=key)
+    form.xdup_candidates = dup_candidates(piece)
     return render(request, 'pieces/form.html', {'form': form, 'piece': piece, 'creating': False})
 
 
@@ -192,6 +208,11 @@ def create(request):
 @writable
 def delete(request, key):
     piece = get_object_or_404(Piece, key=key)
+    refs = dups.referrers(key)
+    if refs:
+        messages.error(request, 'Suppression impossible : déclarée comme référence de doublons (' + ', '.join(k for k, _ in refs)
+                       + '). Retirez d\'abord leur champ xdup.')
+        return redirect('detail', key=key)
     if request.method == 'POST':
         piece.delete()
         messages.success(request, f'Entrée {key} supprimée.')
@@ -229,8 +250,37 @@ def duplicates_view(request):
         threshold = min(max(float(request.GET.get('seuil', '0.85')), 0.3), 0.99)
     except ValueError:
         threshold = 0.85
+    docs = get_corpus()
+    declared = [(d, docs.by_key.get(d.v['xdup']), d.v['xdup']) for d in docs.docs if d.v.get('xdup')]
     return render(request, 'pieces/duplicates.html',
-                  {'pairs': get_similarity().duplicates(threshold), 'threshold': threshold})
+                  {'pairs': get_similarity().duplicates(threshold), 'threshold': threshold, 'declared': declared})
+
+
+@writable
+def declare_duplicate(request):
+    """POST key, of : déclare l'entrée key doublon de l'entrée of (champ xdup)."""
+    if request.method != 'POST':
+        return redirect('duplicates')
+    piece = get_object_or_404(Piece, key=request.POST.get('key', ''))
+    target = request.POST.get('of', '').strip()
+    error = dups.xdup_error(piece.key, target, piece.key)
+    if error:
+        messages.error(request, error)
+    else:
+        piece.xdup = target
+        piece.save(update_fields=['xdup'])
+        messages.success(request, f'{piece.key} déclaré doublon de {target}.')
+    return redirect('duplicates')
+
+
+@writable
+def clear_duplicate(request, key):
+    piece = get_object_or_404(Piece, key=key)
+    if request.method == 'POST' and piece.xdup:
+        messages.success(request, f'{key} n\'est plus déclaré doublon de {piece.xdup}.')
+        piece.xdup = None
+        piece.save(update_fields=['xdup'])
+    return redirect('duplicates')
 
 
 def advanced_search(request):
@@ -273,7 +323,7 @@ HELP = [
      'examples': [('theme:dogger', 'thème'), ('type:email', 'type'), ('org:brgm', 'organisation'), ('auteur:dupont', 'auteur'), ('titre:"réseau de chaleur"', 'dans le titre'),
                   ('lang:fr', 'langue'), ('acr:brgmfr', 'source (acronyme)'), ('-theme:dogger', 'tout sauf ce thème')]},
     {'title': 'Présence', 'intro': 'has: / no: (ou sans:) testent la présence d’un champ.',
-     'examples': [('has:url', 'avec une adresse'), ('no:note', 'sans note'), ('has:override', 'avec surcharges du .bib')]},
+     'examples': [('has:url', 'avec une adresse'), ('no:note', 'sans note'), ('has:override', 'avec surcharges du .bib'), ('has:xdup', 'doublons déclarés'), ('no:xdup', 'hors doublons déclarés'), ('xdup:2015-00-00-sigesfr-dogger', 'doublons de cette entrée')]},
     {'title': 'Clés et identifiants', 'intro': "La clé de citation (ou un fragment) et les identifiants se cherchent tels quels : clé, number, xcounter, shorthand, file, url, note.",
      'examples': [('brgmfr-39522', 'clé ou fragment de clé'), ('39522', 'identifiant'), ('R39522', 'identifiant, espaces et tirets ignorés')]},
     {'title': 'FTS5 brut', 'intro': "Case « FTS5 brut » : la requête est transmise telle quelle à SQLite FTS5 (AND, OR, NOT, NEAR, colonne:mot). Les filtres de dates et les facettes restent utilisables par les champs « du / au » et les facettes.",

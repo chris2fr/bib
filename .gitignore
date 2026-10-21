@@ -227,3 +227,6 @@ biblio.sqlite
 biblio.json
 staticfiles/
 files/
+
+# bibman : réglages locaux (secrets)
+.env

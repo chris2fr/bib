@@ -1,11 +1,26 @@
 {% extends "pieces/base.html" %}
 {% block content %}
-<h1>Doublons probables</h1>
+<h1>Doublons</h1>
+<p>Un doublon est parfois nécessaire (d'anciens documents le citent). On le garde et on le rattache à l'entrée de référence par son
+champ <code>xdup</code> : il quitte alors la liste des doublons probables.</p>
+
+<h2>Doublons probables</h2>
 <form method="get">seuil de similarité du texte : <input name="seuil" value="{{ threshold }}" size="4"> <button>Appliquer</button></form>
 <ul>
 {% for p in pairs %}<li>{{ p.score|floatformat:2 }} —
   <a href="{% url 'detail' p.a.key %}">{{ p.a.key }}</a>{% if p.b %} / <a href="{% url 'detail' p.b.key %}">{{ p.b.key }}</a>{% endif %}
-  <small>{{ p.reasons|join:" ; " }}</small></li>
-{% empty %}<li>Aucun doublon.</li>{% endfor %}
+  <small>{{ p.reasons|join:" ; " }}</small>
+  {% if p.b and not readonly %}
+  <form method="post" action="{% url 'declare_duplicate' %}" class="inline">{% csrf_token %}<input type="hidden" name="key" value="{{ p.a.key }}"><input type="hidden" name="of" value="{{ p.b.key }}"><button title="{{ p.a.key }} devient un doublon de {{ p.b.key }}">gauche = doublon de droite</button></form>
+  <form method="post" action="{% url 'declare_duplicate' %}" class="inline">{% csrf_token %}<input type="hidden" name="key" value="{{ p.b.key }}"><input type="hidden" name="of" value="{{ p.a.key }}"><button title="{{ p.b.key }} devient un doublon de {{ p.a.key }}">droite = doublon de gauche</button></form>
+  {% endif %}</li>
+{% empty %}<li>Aucun doublon probable.</li>{% endfor %}
+</ul>
+
+<h2>Doublons déclarés <small>({{ declared|length }})</small></h2>
+<ul>
+{% for dup, target, key in declared %}<li><a href="{% url 'detail' dup.key %}">{{ dup.key }}</a> → {% if target %}<a href="{% url 'detail' target.key %}">{{ target.key }}</a>{% else %}<span class="error">{{ key }} (introuvable)</span>{% endif %}
+  {% if not readonly %}<form method="post" action="{% url 'clear_duplicate' dup.key %}" class="inline">{% csrf_token %}<button>retirer</button></form>{% endif %}</li>
+{% empty %}<li>Aucun doublon déclaré.</li>{% endfor %}
 </ul>
 {% endblock %}

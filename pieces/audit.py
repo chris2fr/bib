@@ -22,6 +22,7 @@ CHECKS = OrderedDict([
     ('datetime', 'xdatetime différent de date + xtime + xtimezone'),
     ('file-path', 'Champ file avec un dossier (attendu : nom de fichier seul)'),
     ('file-missing', 'Fichier du champ file absent du dossier BIBMAN_FILES'),
+    ('xdup', 'xdup invalide (clé introuvable, soi-même ou doublon d\'un doublon)'),
     ('missing-title', 'Titre absent'),
     ('missing-date', 'Date absente'),
 ])
@@ -67,6 +68,14 @@ def run_audit():
             found['file-path'].append((d, v['file']))
         elif v['file'] and folder_ok and not files.locate(d.key, v['file']):
             found['file-missing'].append((d, v['file']))
+        if v['xdup']:
+            target = corpus.by_key.get(v['xdup'])
+            if v['xdup'] == d.key:
+                found['xdup'].append((d, 'doublon de lui-même'))
+            elif target is None:
+                found['xdup'].append((d, f'clé introuvable : {v["xdup"]}'))
+            elif target.v['xdup']:
+                found['xdup'].append((d, f'{v["xdup"]} est lui-même un doublon de {target.v["xdup"]}'))
         if not v['title']:
             found['missing-title'].append((d, ''))
         if not d.date:

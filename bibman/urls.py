@@ -14,6 +14,8 @@ urlpatterns = [
     path('aide/', views.help_view, name='help'),
     path('audit/', views.audit_view, name='audit'),
     path('doublons/', views.duplicates_view, name='duplicates'),
+    path('doublons/declarer/', views.declare_duplicate, name='declare_duplicate'),
+    path('doublons/<str:key>/retirer/', views.clear_duplicate, name='clear_duplicate'),
     path('export/fr.json', views.export_json, name='export_json'),
     path('export/fr.bib', views.export_bib, name='export_bib'),
 ]
