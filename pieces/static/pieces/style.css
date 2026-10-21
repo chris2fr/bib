@@ -47,3 +47,6 @@ form.advanced > .error, form.advanced > button, form.advanced > a { grid-column:
 form.inline { display: inline; }
 form.inline button { font-size: .8rem; padding: 0 .4rem; }
 .dup { border-left: 4px solid #d97706; padding: .2rem .6rem; background: rgba(217,119,6,.08); }
+.ovbtn { opacity: .45; transition: opacity .15s; }
+.ovbtn:hover, .ovbtn:focus-within, tr:hover .ovbtn { opacity: 1; }
+.ovbtn button { font-family: ui-monospace, monospace; }

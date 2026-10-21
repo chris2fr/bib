@@ -16,9 +16,14 @@
 {% else %}<small>Dossier des fichiers sources introuvable : <code>{{ source.folder }}</code> (variable <code>BIBMAN_FILES</code>).</small>{% endif %}
 </p>
 
-<h2>Champs BibTeX</h2>
+<h2>Champs BibTeX{% if has_ov and not readonly %} <small class="ovbtn">surcharges :
+  <form method="post" action="{% url 'override_move' piece.key %}" class="inline">{% csrf_token %}<input type="hidden" name="field" value="*"><button name="action" value="bib2base" title="Toutes les surcharges remplacent les valeurs de base, puis disparaissent">bib2base</button><button name="action" value="base2bib" title="Garde toutes les valeurs de base et supprime les surcharges" onclick="return confirm('Supprimer toutes les surcharges du .bib ?')">base2bib</button></form>
+</small>{% endif %}</h2>
 <table>
-{% for r in rows %}<tr><th>{{ r.name }}</th><td>{{ r.value }}{% if r.base %}<br><small>base : {{ r.base }}</small>{% endif %}</td><td><small>{{ r.origin }}</small></td></tr>{% endfor %}
+{% for r in rows %}<tr><th>{{ r.name }}</th><td>{{ r.value }}{% if r.base %}<br><small>base : {{ r.base }}</small>{% endif %}</td><td><small>{{ r.origin }}</small>
+  {% if r.has_ov and not readonly %}<form method="post" action="{% url 'override_move' piece.key %}" class="inline ovbtn">{% csrf_token %}<input type="hidden" name="field" value="{{ r.name }}">
+    {% if r.to_base %}<button name="action" value="bib2base" title="La valeur du .bib{% if r.origin == 'supprimé du .bib' %} (champ supprimé){% endif %} devient la valeur de base ; la surcharge disparaît"{% if r.origin == 'supprimé du .bib' %} onclick="return confirm('Supprimer aussi la valeur de base de {{ r.name }} ?')"{% endif %}>bib2base</button>{% endif %}
+    <button name="action" value="base2bib" title="Garde la valeur de base ; la surcharge disparaît">base2bib</button></form>{% endif %}</td></tr>{% endfor %}
 </table>
 
 {% if extras %}<h2>Autres champs</h2>

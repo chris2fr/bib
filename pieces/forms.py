@@ -9,6 +9,7 @@ from .dates import check_date, check_time, check_timezone, is_full_date, make_da
 from .models import Piece
 
 LONG = {'abstract': 6, 'note': 3, 'annote': 3, 'keywords': 2, 'file': 2}
+COMPUTED_FIELDS = ('year', 'xdatetime')      # calculés (date, heure, fuseau), jamais saisis
 KEY_RE = re.compile(r'^[\w][\w.+:-]*$')
 DATE_HELP = 'AAAA-MM-JJ ; MM et JJ valent 00 si inconnus (1997-05-00, 1997-00-00). L\'année est calculée à partir de la date.'
 TIME_HELP = 'HH:MM (00:00 à 23:59). xdatetime est calculé : date complète + heure (+ fuseau, s\'il est choisi).'
@@ -37,7 +38,7 @@ class PieceForm(forms.Form):
         self.fields['entrytype'] = forms.CharField(label='ENTRYTYPE', initial='misc', strip=True)
         self._helper('entrytype', required=True)
         for f in sort_fields(BIB, 'bibtex'):            # ordre universel (paramètre BIBMAN_ORDER_BIBTEX, sinon alphabétique)
-            if f in ('year', 'xdatetime'):    # calculés à partir de la date, de l'heure et du fuseau (voir build_entry)
+            if f in COMPUTED_FIELDS:          # calculés à partir de la date, de l'heure et du fuseau (voir build_entry)
                 continue
             widget = forms.Textarea(attrs={'rows': LONG[f]}) if f in LONG else forms.TextInput()
             if f == 'date':
@@ -101,7 +102,7 @@ class PieceForm(forms.Form):
                    'extra_json': json.dumps({k: v for k, v in entry.items() if k not in SPECIAL and k not in BIBSET},
                                             ensure_ascii=False, indent=2),
                    'bibtex_json': json.dumps(entry['bibtex'], ensure_ascii=False, indent=2) if entry.get('bibtex') else ''}
-        initial.update({f: entry[f] for f in BIB if f in entry and f not in ('year', 'xdatetime')})
+        initial.update({f: entry[f] for f in BIB if f in entry and f not in COMPUTED_FIELDS})
         return cls(initial=initial, **kw)
 
     def clean_date(self):

@@ -85,6 +85,13 @@ par ordre alphabétique ; sans paramètre, tout est alphabétique. L'ordre n'est
 automatiquement au premier accès, ce qui demande SQLite ≥ 3.35), un champ vide équivaut à un champ absent, et réécrire un
 `fr.json` ne reproduit donc plus l'ordre d'origine des clés.
 
+**Surcharges du .bib** : sur la fiche, de discrets boutons `bib2base` / `base2bib` apparaissent à côté de chaque champ surchargé (et, en
+titre de section, pour toutes les surcharges). `bib2base` fait de la valeur du .bib la valeur de base puis supprime la surcharge
+(une surcharge `null`, c'est-à-dire un champ retiré du .bib, retire aussi la valeur de base, après confirmation) ; la nouvelle
+valeur de base passe par les contrôles du formulaire (date, heure, fichier, xdup…) et `year` / `xdatetime` sont recalculés.
+`base2bib` garde la valeur de base et supprime seulement la surcharge. Un champ calculé (`year`, `xdatetime`) ou propre au .bib
+n'a pas de valeur de base à remplacer : seul `base2bib` lui est proposé.
+
 **Doublons** : un doublon est parfois nécessaire (d'anciens documents le citent). Le champ **`xdup`** d'une entrée donne la clé d'une
 autre entrée dont elle est le doublon ; il se saisit dans le formulaire (clés proches proposées) ou en un clic depuis la page
 Doublons (« gauche = doublon de droite »). Règles : la clé doit exister, ce n'est pas l'entrée elle-même, la cible n'est pas un

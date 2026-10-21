@@ -10,13 +10,13 @@ from django.db import DatabaseError
 from django.http import FileResponse, Http404, HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from frlib import BIBSET, SPECIAL, sort_fields
+from frlib import BIBSET, SPECIAL, set_bibtex, sort_fields
 
 from . import dups, files, helpers, search
 from .audit import run_audit
 from .bibfmt import bib_text
 from .corpus import bump, get_corpus
-from .forms import AdvancedSearchForm, PieceForm
+from .forms import COMPUTED_FIELDS, AdvancedSearchForm, PieceForm
 from .models import Piece
 from .render import render_markdown
 from .similar import get_similarity
@@ -100,12 +100,14 @@ def detail(request, key):
             continue
         if name in ov:
             rows.append({'name': name, 'value': base if ov[name] is None else ov[name],
-                         'base': None if ov[name] is None else base,
+                         'base': None if ov[name] is None else base, 'has_ov': True, 'to_base': name not in COMPUTED_FIELDS,
                          'origin': 'supprimé du .bib' if ov[name] is None else 'surcharge'})
         else:
             rows.append({'name': name, 'value': base, 'origin': 'base'})
-    rows += [{'name': n, 'value': ov[n], 'origin': 'bibtex seul'}
-             for n in sort_fields([n for n, v in ov.items() if n not in BIBSET and n != 'ENTRYTYPE' and v is not None], 'bibtex')]
+    shown = {r['name'] for r in rows}
+    rows += [{'name': n, 'value': ov[n], 'has_ov': True, 'to_base': n in BIBSET and n not in COMPUTED_FIELDS,
+              'origin': 'surcharge, sans valeur de base' if n in BIBSET else 'bibtex seul'}
+             for n in sort_fields([n for n, v in ov.items() if n not in shown and n != 'ENTRYTYPE' and v is not None], 'bibtex')]
     extras = [{'name': k, 'value': json.dumps(v, ensure_ascii=False, indent=2) if isinstance(v, (dict, list)) else v}
               for k, v in entry.items() if k not in SPECIAL and k not in BIBSET]
     full = request.GET.get('full') == '1'
@@ -116,7 +118,7 @@ def detail(request, key):
         similar = []
     return render(request, 'pieces/detail.html', {
         'piece': piece, 'entry': entry, 'rows': rows, 'extras': extras, 'body': body, 'truncated': truncated,
-        'size': len(piece.markdown), 'source': source_info(piece), 'dup_refs': dups.referrers(piece.key),
+        'has_ov': any(r.get('has_ov') for r in rows), 'size': len(piece.markdown), 'source': source_info(piece), 'dup_refs': dups.referrers(piece.key),
         'dup_of': Piece.objects.filter(key=piece.xdup).values('key', 'title').first() if piece.xdup else None, 'bib': bib_text(entry), 'similar': similar,
         'raw': json.dumps({k: v for k, v in entry.items() if k != 'markdown'}, ensure_ascii=False, indent=2),
     })
@@ -187,6 +189,56 @@ def edit(request, key):
         form = PieceForm.from_entry(entry, current_key=key)
     form.xdup_candidates = dup_candidates(piece)
     return render(request, 'pieces/form.html', {'form': form, 'piece': piece, 'creating': False})
+
+
+@writable
+def override_move(request, key):
+    """POST field (nom ou *) et action : bib2base (la surcharge du .bib devient la valeur de base, puis disparaît)
+    ou base2bib (la valeur de base est gardée, la surcharge disparaît)."""
+    piece = get_object_or_404(Piece, key=key)
+    entry = piece.to_entry()
+    ov = dict(entry.get('bibtex') or {})
+    action, field = request.POST.get('action'), request.POST.get('field', '')
+    names = list(ov) if field == '*' else [field]
+    if request.method != 'POST' or action not in ('bib2base', 'base2bib') or not ov or any(n not in ov for n in names):
+        messages.error(request, 'Rien à faire : surcharge introuvable.')
+        return redirect('detail', key=key)
+    label = 'toutes les surcharges' if field == '*' else f'la surcharge de « {field} »'
+    new = dict(entry)
+    if action == 'bib2base':
+        movable = [n for n in names if n in BIBSET and n not in COMPUTED_FIELDS]
+        if field != '*' and not movable:
+            messages.error(request, f'« {field} » n\'a pas de valeur de base à remplacer (champ calculé ou propre au .bib) ; utilisez base2bib.')
+            return redirect('detail', key=key)
+        for n in movable:                                    # null supprimait le champ du .bib : il disparaît aussi de la base
+            value = ov.pop(n)
+            if value is None:
+                new.pop(n, None)
+            else:
+                new[n] = value
+        if field == '*':
+            ov = {n: v for n, v in ov.items() if n not in movable}      # les surcharges non déplaçables restent
+        set_bibtex(new, ov)
+        # la nouvelle valeur de base passe par les mêmes contrôles que le formulaire (date, heure, fichier, xdup...)
+        form = PieceForm({k: v for k, v in PieceForm.from_entry(new, current_key=key).initial.items()}, current_key=key)
+        if not form.is_valid():
+            messages.error(request, 'Valeur refusée : ' + ' ; '.join(f'{f} : {" ".join(e)}' for f, e in form.errors.items()))
+            return redirect('detail', key=key)
+        new = form.build_entry(entry)
+        verb = f'{label} appliquée à la base'
+    else:
+        if field == '*':
+            ov = {}
+        else:
+            ov.pop(field)
+        set_bibtex(new, ov)
+        verb = f'{label} supprimée (valeur de base gardée)'
+    changed = piece.set_from_entry(new)
+    if changed:
+        piece.save(update_fields=changed)
+        helpers.remember(piece)
+    messages.success(request, verb[0].upper() + verb[1:] + '.')
+    return redirect('detail', key=key)
 
 
 @writable

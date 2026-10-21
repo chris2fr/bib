@@ -7,6 +7,7 @@ urlpatterns = [
     path('nouvelle/', views.create, name='create'),
     path('p/<str:key>/', views.detail, name='detail'),
     path('p/<str:key>/modifier/', views.edit, name='edit'),
+    path('p/<str:key>/surcharge/', views.override_move, name='override_move'),
     path('p/<str:key>/supprimer/', views.delete, name='delete'),
     path('p/<str:key>/fichier/', views.source_file, name='source_file'),
     path('p/<str:key>/bib/', views.piece_bib, name='piece_bib'),
