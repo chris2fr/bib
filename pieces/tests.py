@@ -260,6 +260,36 @@ class ViewTests(FrTestCase):
         self.assertEqual(Piece.objects.get(key=legacy.key).year, '2008')   # sans date : année héritée conservée
         self.assertIn('id="datepick"', self.c.get(f'/p/{self.key}/modifier/').content.decode())
 
+    def test_rename_key_updates_shorthand(self):
+        entry = Piece.objects.get(key=self.key).to_entry()
+        page = self.c.get(f'/p/{self.key}/modifier/').content.decode()
+        self.assertIn(f'name="key" value="{self.key}"', page)
+        new = '1997-05-00-brgmfr-renamed'
+        r = self.c.post(f'/p/{self.key}/modifier/', self._post_data(entry, key=new), follow=True)
+        self.assertIn('Clé renommée', r.content.decode())
+        self.assertEqual(r.redirect_chain[-1][0], f'/p/{new}/')
+        self.assertFalse(Piece.objects.filter(key=self.key).exists())
+        p = Piece.objects.get(key=new)
+        self.assertEqual(p.shorthand, new)                                 # shorthand suit la clé
+        self.assertEqual(p.to_entry()['key'], new)
+        self.assertEqual(p.n, Piece.objects.get(key=new).n)
+        self.assertIn(new, [d.key for d, _, _ in search.search('renamed').ranked])   # FTS et cache à jour
+        self.assertEqual(self.c.get(f'/p/{self.key}/').status_code, 404)
+
+    def test_rename_key_keeps_custom_shorthand_and_checks_uniqueness(self):
+        entry = Piece.objects.get(key=self.key).to_entry()
+        Piece.objects.filter(key=self.key).update(shorthand='Ignatiadis 1997')
+        entry = Piece.objects.get(key=self.key).to_entry()
+        self.c.post(f'/p/{self.key}/modifier/', self._post_data(entry, key='1997-05-00-brgmfr-x1'), follow=True)
+        self.assertEqual(Piece.objects.get(key='1997-05-00-brgmfr-x1').shorthand, 'Ignatiadis 1997')   # personnalisé : conservé
+        entry = Piece.objects.get(key='1997-05-00-brgmfr-x1').to_entry()
+        self.c.post('/p/1997-05-00-brgmfr-x1/modifier/', self._post_data(entry, key='1997-05-00-brgmfr-x2', shorthand='Perso'), follow=True)
+        self.assertEqual(Piece.objects.get(key='1997-05-00-brgmfr-x2').shorthand, 'Perso')              # modifié dans le formulaire : respecté
+        r = self.c.post('/p/1997-05-00-brgmfr-x2/modifier/', self._post_data(entry, key='2015-00-00-sigesfr-dogger'))
+        self.assertIn('existe déjà', r.content.decode())
+        r = self.c.post('/p/1997-05-00-brgmfr-x2/modifier/', self._post_data(entry, key='a b/c'))
+        self.assertIn('Clé invalide', r.content.decode())
+
     def test_edit_validation(self):
         entry = Piece.objects.get(key=self.key).to_entry()
         for field, value, msg in [('abstract', 'x { y', 'déséquilibrées'), ('bibtex_json', '[1]', 'objet JSON'),

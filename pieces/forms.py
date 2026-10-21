@@ -39,12 +39,15 @@ class PieceForm(forms.Form):
     """Édition d'une entrée du fr.json « remonté » : champs BibTeX (valeurs de base), autres champs (JSON),
     surcharges du .bib (JSON) et markdown."""
 
-    def __init__(self, *args, creating=False, **kwargs):
+    def __init__(self, *args, creating=False, current_key=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.creating = creating
-        if creating:
-            self.fields['key'] = forms.CharField(label='Clé de citation', strip=True,
-                                                 help_text='Forme habituelle : AAAA-MM-JJ-acronyme-compteur. Non modifiable ensuite.')
+        self.current_key = current_key            # clé actuelle de l'entrée éditée (None à la création)
+        self.shorthand_synced = False
+        self.fields['key'] = forms.CharField(
+            label='Clé (ID)', strip=True,
+            help_text='Identifiant de citation, aussi utilisé dans le .bib. Forme habituelle : AAAA-MM-JJ-acronyme-compteur. '
+                      + ('' if creating else 'Si vous la modifiez, shorthand suit (sauf si vous l\'avez personnalisé).'))
         self.fields['entrytype'] = forms.CharField(label='ENTRYTYPE', initial='misc', strip=True)
         self._helper('entrytype', required=True)
         for f in BIB:
@@ -86,7 +89,7 @@ class PieceForm(forms.Form):
 
     @classmethod
     def from_entry(cls, entry, **kw):
-        initial = {'entrytype': entry.get('ENTRYTYPE', 'misc'), 'markdown': entry.get('markdown', ''),
+        initial = {'key': entry['key'], 'entrytype': entry.get('ENTRYTYPE', 'misc'), 'markdown': entry.get('markdown', ''),
                    'extra_json': json.dumps({k: v for k, v in entry.items() if k not in SPECIAL and k not in BIBSET},
                                             ensure_ascii=False, indent=2),
                    'bibtex_json': json.dumps(entry['bibtex'], ensure_ascii=False, indent=2) if entry.get('bibtex') else ''}
@@ -104,7 +107,7 @@ class PieceForm(forms.Form):
         key = self.cleaned_data['key']
         if not KEY_RE.match(key):
             raise forms.ValidationError('Clé invalide (lettres, chiffres, - _ . + : ; pas d\'espace ni de /).')
-        if Piece.objects.filter(key=key).exists():
+        if Piece.objects.filter(key=key).exclude(key=self.current_key).exists():
             raise forms.ValidationError('Cette clé existe déjà.')
         return key
 
@@ -155,6 +158,7 @@ class PieceForm(forms.Form):
         """Entrée fr.json résultant du formulaire; l'ordre des champs existants est conservé."""
         cd = self.cleaned_data
         entry = dict(old) if old else {'key': cd['key']}
+        entry['key'] = cd['key']
         put_field(entry, 'ENTRYTYPE', cd['entrytype'])
         for f in BIB:
             v = cd.get(f)
@@ -169,6 +173,12 @@ class PieceForm(forms.Form):
                 entry.pop(f, None)
             elif entry.get(f) != v:
                 put_field(entry, f, v)
+        if old and cd['key'] != old['key']:
+            # clé renommée : shorthand (= clé par défaut) suit, sauf s'il a été personnalisé ou modifié dans ce formulaire
+            before = old.get('shorthand') or ''
+            if (cd.get('shorthand') or '') == before and before in ('', old['key']):
+                put_field(entry, 'shorthand', cd['key'])
+                self.shorthand_synced = True
         new_extra = cd['extra']
         for k in [k for k in entry if k not in SPECIAL and k not in BIBSET and k not in new_extra]:
             del entry[k]

@@ -74,6 +74,10 @@ cohérence entre la clé `AAAA-MM-JJ-acronyme-compteur` et `year`, `date`, `xacr
 Formulaire pour les champs BibTeX (valeurs de base), les autres champs (JSON), les surcharges du .bib (JSON ; `null` supprime un
 champ du .bib) et le markdown. Contrôles : accolades équilibrées (sinon l'export .bib échouerait), JSON valide, champs réservés,
 clé unique. Les retours à la ligne des navigateurs (CRLF) sont normalisés : enregistrer sans rien changer ne modifie rien.
+**Clé (ID)** : la clé de citation (colonne `id`, utilisée dans le .bib) est affichée et modifiable à l'édition. Renommer
+la clé met `shorthand` à jour (il vaut la clé par défaut), sauf s'il a été personnalisé ou modifié dans le même formulaire.
+Les autres champs qui citent l'ancienne clé (`xduplicate`, `xacronym`, `xcounter`...) ne sont pas réécrits : l'audit les signale.
+
 **Dates** : `date` doit être au format ISO `AAAA-MM-JJ`, `MM` et `JJ` pouvant valoir `00` (`1997-05-00`, `1997-00-00`) ; mois, jour et
 longueur du mois sont contrôlés à l'enregistrement (et dans le navigateur, avant l'envoi). `year` n'est plus saisi : il est
 calculé à partir de la date. Un petit calendrier facultatif remplit le champ (il ne sait pas écrire `00`, tapez-les à la main).

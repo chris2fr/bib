@@ -79,6 +79,9 @@ class Piece(models.Model):
         """Applique une entrée à l'instance; renvoie la liste des champs modifiés (pour save(update_fields=...))."""
         row = entry_to_row(entry)
         changed = []
+        if self.key != row['id']:                       # clé renommée (colonne id)
+            self.key = row['id']
+            changed.append('key')
         for f in ROW_FIELDS:
             if getattr(self, f) != row[f]:
                 setattr(self, f, row[f])
