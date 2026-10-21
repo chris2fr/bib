@@ -84,9 +84,16 @@ class Piece(models.Model):
             self.key = row['id']
             changed.append('key')
         for f in ROW_FIELDS:
-            if getattr(self, f) != row[f]:
-                setattr(self, f, row[f])
+            if f == 'field_order':
+                continue                                # l'ordre des champs est universel (frlib.order_entry), pas propre à l'entrée
+            old, new = getattr(self, f), row[f]
+            same = (json.loads(old or 'null') == json.loads(new or 'null')) if f in ('extra', 'bibtex') else old == new
+            if not same:
+                setattr(self, f, new)
                 changed.append(f)
+        if changed:
+            self.field_order = row['field_order']       # enregistré avec le reste, sans être présenté comme une modification
+            changed.append('field_order')
         return changed
 
     @property

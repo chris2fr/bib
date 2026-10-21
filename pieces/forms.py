@@ -2,7 +2,7 @@ import json
 import re
 
 from django import forms
-from frlib import BIB, BIBSET, SPECIAL, check_braces, put_field, set_bibtex
+from frlib import BIB, BIBSET, SPECIAL, check_braces, put_field, set_bibtex, sort_fields
 
 from . import files, helpers
 from .dates import check_date, check_time, check_timezone, is_full_date, make_datetime, timezones
@@ -35,7 +35,7 @@ class PieceForm(forms.Form):
                       + ('' if creating else 'Si vous la modifiez, shorthand suit (sauf si vous l\'avez personnalisé).'))
         self.fields['entrytype'] = forms.CharField(label='ENTRYTYPE', initial='misc', strip=True)
         self._helper('entrytype', required=True)
-        for f in BIB:
+        for f in sort_fields(BIB, 'bibtex'):            # ordre universel (paramètre BIBMAN_ORDER_BIBTEX, sinon alphabétique)
             if f in ('year', 'xdatetime'):    # calculés à partir de la date, de l'heure et du fuseau (voir build_entry)
                 continue
             widget = forms.Textarea(attrs={'rows': LONG[f]}) if f in LONG else forms.TextInput()

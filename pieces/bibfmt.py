@@ -1,5 +1,5 @@
 """Mise en forme BibTeX d'une entrée du fr.json : valeurs de base, puis surcharges du .bib appliquées."""
-from frlib import BIBSET
+from frlib import BIBSET, sort_fields
 
 
 def bib_fields(entry):
@@ -7,7 +7,7 @@ def bib_fields(entry):
     ov = entry.get('bibtex') or {}
     fields = {name: ov.get(name, base) for name, base in entry.items() if name in BIBSET}
     fields.update({n: v for n, v in ov.items() if n not in BIBSET and n != 'ENTRYTYPE'})
-    return {n: v for n, v in fields.items() if v is not None}
+    return {n: fields[n] for n in sort_fields([n for n, v in fields.items() if v is not None], 'bibtex')}
 
 
 def bib_text(entry):

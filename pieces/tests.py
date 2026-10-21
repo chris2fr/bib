@@ -2,6 +2,7 @@ import json
 import tempfile
 from pathlib import Path
 
+import frlib
 import json2db
 from django.db import connection
 from django.test import Client, TestCase, override_settings
@@ -220,6 +221,65 @@ class SimilarAuditTests(FrTestCase):
         self.assertIn('2020-01-01-foo-0001', found['year'])
         self.assertIn('2020-01-01-foo-0001', found['acronym'])
         self.assertNotIn('1997-05-00-brgmfr-39522', found['year'])
+
+
+class FieldOrderTests(FrTestCase):
+    key = '1997-05-00-brgmfr-39522'
+
+    def setUp(self):
+        super().setUp()
+        self.c = Client()
+        self.addCleanup(frlib.set_order)                       # retour aux variables d'environnement
+
+    def messy(self):
+        return {'key': 'k-1', 'ENTRYTYPE': 'misc', 'zeta': 1, 'title': 'T', 'Alpha': 2, 'year': '2000', 'author': 'A',
+                'date': '2000-01-01', 'markdown': 'm', 'bibtex': {'title': 'X'}}
+
+    def stored_order(self, entry):
+        return list(frlib.row_to_entry(frlib.entry_to_row(entry)))
+
+    def test_default_is_alphabetical_inside_each_group(self):
+        self.assertEqual(self.stored_order(self.messy()),
+                         ['key', 'ENTRYTYPE', 'author', 'date', 'title', 'year', 'Alpha', 'zeta', 'markdown', 'bibtex'])
+
+    def test_parameter_then_alphabetical_for_the_rest(self):
+        frlib.set_order(bibtex=['title', 'year'], other=['zeta'])
+        self.assertEqual(self.stored_order(self.messy()),
+                         ['key', 'ENTRYTYPE', 'title', 'year', 'author', 'date', 'zeta', 'Alpha', 'markdown', 'bibtex'])
+
+    def test_environment_parameter(self):
+        import os
+        from unittest import mock
+        with mock.patch.dict(os.environ, {'BIBMAN_ORDER_BIBTEX': ' date , title ', 'BIBMAN_ORDER_OTHER': 'zeta'}):
+            self.assertEqual(frlib.field_order('bibtex'), ['date', 'title'])
+            self.assertEqual(self.stored_order(self.messy())[2:7], ['date', 'title', 'author', 'year', 'zeta'])
+
+    def test_bib_export_form_and_detail_follow_the_order(self):
+        def positions(html, *needles):
+            return [html.index(n) for n in needles]
+        page = lambda url: self.c.get(url).content.decode()
+        form_needles = ('name="author"', 'name="date"', 'name="title"')
+        bib_needles = ('author =', 'date =', 'title =')
+        entry = Piece.objects.get(key=self.key).to_entry()
+        self.assertEqual(positions(page(f'/p/{self.key}/modifier/'), *form_needles), sorted(positions(page(f'/p/{self.key}/modifier/'), *form_needles)))
+        text = page(f'/p/{self.key}/bib/')
+        self.assertEqual(positions(text, *bib_needles), sorted(positions(text, *bib_needles)))      # alphabétique par défaut
+        frlib.set_order(bibtex=['title', 'date'])
+        for url, needles in ((f'/p/{self.key}/modifier/', form_needles), (f'/p/{self.key}/bib/', bib_needles)):
+            p = positions(page(url), *needles)
+            self.assertLess(p[2], p[1], url)                                                         # title avant date
+            self.assertLess(p[1], p[0], url)                                                         # date avant author
+        self.assertEqual(list(self.c.get('/export/fr.json').json()[self.key])[:4], ['key', 'ENTRYTYPE', 'title', 'date'])
+        # modifier sans rien changer reste « Aucun changement » quel que soit l'ordre
+        data = {k: v.replace('\n', '\r\n') if isinstance(v, str) else v for k, v in PieceForm.from_entry(entry).initial.items()}
+        self.assertIn('Aucun changement', self.c.post(f'/p/{self.key}/modifier/', data, follow=True).content.decode())
+
+    def test_legacy_stored_order_is_not_a_change(self):
+        Piece.objects.filter(key=self.key).update(field_order='["markdown","key","title"]')
+        entry = Piece.objects.get(key=self.key).to_entry()
+        self.assertEqual(list(entry)[:2], ['key', 'ENTRYTYPE'])                                      # l'ordre stocké est ignoré
+        data = {k: v.replace('\n', '\r\n') if isinstance(v, str) else v for k, v in PieceForm.from_entry(entry).initial.items()}
+        self.assertIn('Aucun changement', self.c.post(f'/p/{self.key}/modifier/', data, follow=True).content.decode())
 
 
 class SourceFilesTests(FrTestCase):

@@ -9,7 +9,7 @@ from django.db import DatabaseError
 from django.http import FileResponse, Http404, HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from frlib import BIBSET, SPECIAL
+from frlib import BIBSET, SPECIAL, sort_fields
 
 from . import files, helpers, search
 from .audit import run_audit
@@ -103,8 +103,8 @@ def detail(request, key):
                          'origin': 'supprimé du .bib' if ov[name] is None else 'surcharge'})
         else:
             rows.append({'name': name, 'value': base, 'origin': 'base'})
-    rows += [{'name': n, 'value': v, 'origin': 'bibtex seul'} for n, v in ov.items()
-             if n not in BIBSET and n != 'ENTRYTYPE' and v is not None]
+    rows += [{'name': n, 'value': ov[n], 'origin': 'bibtex seul'}
+             for n in sort_fields([n for n, v in ov.items() if n not in BIBSET and n != 'ENTRYTYPE' and v is not None], 'bibtex')]
     extras = [{'name': k, 'value': json.dumps(v, ensure_ascii=False, indent=2) if isinstance(v, (dict, list)) else v}
               for k, v in entry.items() if k not in SPECIAL and k not in BIBSET]
     full = request.GET.get('full') == '1'
@@ -159,7 +159,7 @@ def edit(request, key):
             if changed:
                 piece.save(update_fields=changed)
                 helpers.remember(piece)
-                msg = 'Entrée enregistrée (modifié : ' + ', '.join(changed) + ').'
+                msg = 'Entrée enregistrée (modifié : ' + ', '.join(c for c in changed if c != 'field_order') + ').'
                 if 'key' in changed:
                     msg += f' Clé renommée : {key} → {piece.key}.' + (' shorthand mis à jour.' if form.shorthand_synced else '')
                 messages.success(request, msg)
