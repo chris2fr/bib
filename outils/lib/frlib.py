@@ -5,7 +5,7 @@ Une entrée est un dict ordonné :
   bibtex = {champ: valeur} (surcharges du .bib ; None supprime le champ du .bib).
 L'ordre des champs est le même pour toutes les entrées (voir order_entry) : d'abord les champs BibTeX, puis les autres champs,
 chaque groupe dans l'ordre donné par BIBMAN_ORDER_BIBTEX / BIBMAN_ORDER_OTHER (noms séparés par des virgules), les champs non
-listés suivant par ordre alphabétique ; sans paramètre, tout est alphabétique. `field_order` n'est plus qu'informatif."""
+listés suivant par ordre alphabétique ; sans paramètre, tout est alphabétique. Aucun ordre n'est stocké."""
 import json
 import os
 
@@ -53,7 +53,7 @@ def _dumps(v):
 
 
 def entry_to_row(entry):
-    """Entrée -> dict de colonnes de `pieces` (id, entrytype, BIB..., extra, bibtex, markdown, field_order)."""
+    """Entrée -> dict de colonnes de `pieces` (id, entrytype, BIB..., extra, bibtex, markdown)."""
     entry = order_entry(entry)
     extra = {k: v for k, v in entry.items() if k not in SPECIAL and k not in BIBSET}
     row = {'id': entry['key'], 'entrytype': entry.get('ENTRYTYPE')}
@@ -62,19 +62,17 @@ def entry_to_row(entry):
     row['extra'] = _dumps(extra)
     row['bibtex'] = _dumps(entry['bibtex']) if entry.get('bibtex') else None
     row['markdown'] = entry.get('markdown') or ''
-    row['field_order'] = _dumps(list(entry))
     return row
 
 
 def row_to_entry(row):
-    """Ligne de `pieces` -> entrée, dans l'ordre universel des champs (field_order ne dit plus que quels champs vides existent)."""
+    """Ligne de `pieces` -> entrée, dans l'ordre universel des champs ; les champs vides sont absents."""
     extra = json.loads(row['extra'] or '{}')
     values = {'key': row['id'], 'ENTRYTYPE': row['entrytype'], 'markdown': row['markdown'],
               'bibtex': json.loads(row['bibtex']) if row['bibtex'] else None}
     values.update({f: row[f] for f in BIB})
     values.update(extra)
-    present = set(json.loads(row['field_order'] or '[]'))           # field_order ne sert plus qu'à retrouver les champs vides voulus
-    entry = {k: v for k, v in values.items() if v is not None and (v != '' or k in present or k == 'key') and k != 'bibtex'}
+    entry = {k: v for k, v in values.items() if v not in (None, '') and k != 'bibtex'}
     if values['bibtex']:
         entry['bibtex'] = values['bibtex']
     return order_entry(entry)

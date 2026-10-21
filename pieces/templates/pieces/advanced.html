@@ -1,0 +1,19 @@
+{% extends "pieces/base.html" %}
+{% block title %}Recherche avancée · {{ site_name }}{% endblock %}
+{% block content %}
+<h1>Recherche avancée</h1>
+<p>Remplissez ce qui vous intéresse : les critères se combinent (ET). Le formulaire écrit la requête équivalente dans la barre de
+recherche de la page de résultats, ce qui permet de la reprendre à la main (voir l'<a href="{% url 'help' %}">aide</a>).</p>
+<form method="get" class="edit advanced">
+  {% if form.errors %}<p class="error">Corrigez les champs signalés.</p>{% endif %}
+  {% for field in form %}
+  <p class="field">
+    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+    {{ field }}
+    {% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}
+    {% if field.errors %}<span class="error">{{ field.errors|join:" " }}</span>{% endif %}
+  </p>
+  {% endfor %}
+  <button>Chercher</button> <a href="{% url 'advanced' %}">Effacer</a>
+</form>
+{% endblock %}

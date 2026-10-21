@@ -46,7 +46,8 @@ Le serveur web frontal sert `/static/` depuis `staticfiles/` et transmet le rest
 
 ## Recherche
 
-La page **Aide** du site (`/aide/`) détaille la syntaxe avec des exemples cliquables ; les champs « du / au » sous la barre de recherche filtrent par plage de dates avec un calendrier.
+La **recherche avancée** (`/recherche-avancee/`) est un formulaire (mots, expression, exclusions, champs, listes, années, dates,
+présence) qui écrit la requête équivalente dans la barre de recherche. La page **Aide** du site (`/aide/`) détaille la syntaxe avec des exemples cliquables ; les champs « du / au » sous la barre de recherche filtrent par plage de dates avec un calendrier.
 
 Insensible aux accents et à la casse. Le site affiche sous la barre de recherche comment la requête a été lue.
 
@@ -80,8 +81,9 @@ clé unique. Les retours à la ligne des navigateurs (CRLF) sont normalisés : e
 **Ordre des champs** : universel, identique pour toutes les entrées (fiche, formulaire, `.bib`, `fr.json`). Les champs BibTeX viennent
 d'abord, puis les « autres champs » ; dans chaque groupe, l'ordre est celui des paramètres `BIBMAN_ORDER_BIBTEX` et
 `BIBMAN_ORDER_OTHER` (noms séparés par des virgules, ex. `BIBMAN_ORDER_BIBTEX=title,author,date,year`), les champs non listés suivant
-par ordre alphabétique ; sans paramètre, tout est alphabétique. L'ordre n'est plus propre à chaque entrée : la colonne `field_order`
-ne sert plus qu'à retrouver les champs vides, et réécrire un `fr.json` ne reproduit donc plus l'ordre d'origine des clés.
+par ordre alphabétique ; sans paramètre, tout est alphabétique. L'ordre n'est plus propre à chaque entrée et n'est plus stocké : la colonne `field_order` a disparu (une base existante la perd
+automatiquement au premier accès, ce qui demande SQLite ≥ 3.35), un champ vide équivaut à un champ absent, et réécrire un
+`fr.json` ne reproduit donc plus l'ordre d'origine des clés.
 
 **Fichiers sources** : le dossier `BIBMAN_FILES` (défaut `./files`) contient les documents d'origine. Le fichier d'une entrée est
 celui que nomme son champ `file` (nom seul, **sans dossier** : refusé à l'enregistrement s'il contient `/` ou `\`), à défaut

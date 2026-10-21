@@ -1,6 +1,7 @@
 import functools
 import json
 import mimetypes
+from urllib.parse import urlencode
 
 from django.conf import settings
 from django.contrib import messages
@@ -15,7 +16,7 @@ from . import files, helpers, search
 from .audit import run_audit
 from .bibfmt import bib_text
 from .corpus import get_corpus
-from .forms import PieceForm
+from .forms import AdvancedSearchForm, PieceForm
 from .models import Piece
 from .render import render_markdown
 from .similar import get_similarity
@@ -159,7 +160,7 @@ def edit(request, key):
             if changed:
                 piece.save(update_fields=changed)
                 helpers.remember(piece)
-                msg = 'Entrée enregistrée (modifié : ' + ', '.join(c for c in changed if c != 'field_order') + ').'
+                msg = 'Entrée enregistrée (modifié : ' + ', '.join(changed) + ').'
                 if 'key' in changed:
                     msg += f' Clé renommée : {key} → {piece.key}.' + (' shorthand mis à jour.' if form.shorthand_synced else '')
                 messages.success(request, msg)
@@ -230,6 +231,26 @@ def duplicates_view(request):
         threshold = 0.85
     return render(request, 'pieces/duplicates.html',
                   {'pairs': get_similarity().duplicates(threshold), 'threshold': threshold})
+
+
+def advanced_search(request):
+    """Formulaire de recherche avancée : traduit les champs en requête et renvoie à la liste de résultats."""
+    try:
+        docs = get_corpus().docs
+    except DatabaseError as e:
+        return render(request, 'pieces/setup.html', {'error': str(e), 'db': settings.DATABASES['default']['NAME']}, status=503)
+    choices = {name: sorted({v for d in docs for v in d.values(name)}, key=lambda v: (v.lower(), v))
+               for name, _, _ in AdvancedSearchForm.SELECTS}
+    form = AdvancedSearchForm(request.GET or None, choices=choices, sorts=search.SORTS)
+    if request.GET and form.is_valid():
+        params = {}
+        query = form.build_query()
+        if query:
+            params['q'] = query
+        if form.cleaned_data.get('sort'):
+            params['sort'] = form.cleaned_data['sort']
+        return redirect(reverse('list') + ('?' + urlencode(params) if params else ''))
+    return render(request, 'pieces/advanced.html', {'form': form})
 
 
 HELP = [

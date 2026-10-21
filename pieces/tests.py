@@ -274,12 +274,70 @@ class FieldOrderTests(FrTestCase):
         data = {k: v.replace('\n', '\r\n') if isinstance(v, str) else v for k, v in PieceForm.from_entry(entry).initial.items()}
         self.assertIn('Aucun changement', self.c.post(f'/p/{self.key}/modifier/', data, follow=True).content.decode())
 
-    def test_legacy_stored_order_is_not_a_change(self):
-        Piece.objects.filter(key=self.key).update(field_order='["markdown","key","title"]')
+    def test_field_order_column_is_dropped_from_old_databases(self):
+        from . import schema
+        with connection.cursor() as c:
+            c.execute("ALTER TABLE pieces ADD COLUMN field_order TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(field_order))")
+            c.execute('''UPDATE pieces SET field_order = '["markdown","key","title"]' ''')
+        schema._ok = False
+        schema.ensure()
+        with connection.cursor() as c:
+            c.execute("SELECT COUNT(*) FROM pragma_table_info('pieces') WHERE name = 'field_order'")
+            self.assertEqual(c.fetchone()[0], 0)
         entry = Piece.objects.get(key=self.key).to_entry()
-        self.assertEqual(list(entry)[:2], ['key', 'ENTRYTYPE'])                                      # l'ordre stocké est ignoré
-        data = {k: v.replace('\n', '\r\n') if isinstance(v, str) else v for k, v in PieceForm.from_entry(entry).initial.items()}
-        self.assertIn('Aucun changement', self.c.post(f'/p/{self.key}/modifier/', data, follow=True).content.decode())
+        self.assertEqual(list(entry)[:2], ['key', 'ENTRYTYPE'])
+        Piece.from_entry({'key': 'k-new-1', 'ENTRYTYPE': 'misc', 'markdown': ''}).save(force_insert=True)      # l'insertion marche sans la colonne
+        self.assertNotIn('markdown', Piece.objects.get(key='k-new-1').to_entry())                             # champ vide = absent
+
+
+class AdvancedSearchTests(FrTestCase):
+    def setUp(self):
+        super().setUp()
+        self.c = Client()
+
+    def query(self, **params):
+        r = self.c.get('/recherche-avancee/', params)
+        self.assertEqual(r.status_code, 302, r.content.decode()[:300] if r.status_code == 200 else '')
+        from urllib.parse import parse_qs, urlparse
+        qs = parse_qs(urlparse(r['Location']).query)
+        return qs.get('q', [''])[0], qs.get('sort', [''])[0]
+
+    def test_page_and_choices(self):
+        html = self.c.get('/recherche-avancee/').content.decode()
+        self.assertIn('name="phrase"', html)
+        self.assertIn('<option value="dogger">', html)                  # listes alimentées par les valeurs du corpus
+        self.assertIn('href="/recherche-avancee/"', self.c.get('/').content.decode())
+
+    def test_builds_the_usual_syntax(self):
+        q, sort = self.query(all='dogger corrosion', phrase='nappe du dogger', exclude='tubage "x y"', title='réseau de chaleur',
+                             author='dupont', organization='brgm', keywords='nappe', xtheme='dogger', language='FR',
+                             year_from='1990', year_to='2000', has_url='has', has_note='no', sort='date')
+        self.assertEqual(q, 'dogger corrosion "nappe du dogger" -tubage -"x y" titre:"réseau de chaleur" auteur:dupont org:brgm kw:nappe '
+                            'theme:dogger lang:FR year:1990..2000 has:url no:note')
+        self.assertEqual(sort, 'date')
+        self.assertEqual(self.query(year_from='2015')[0], 'year:>=2015')
+        self.assertEqual(self.query(date_from='1997-05', date_to='1998-03-01')[0], 'date:1997-05..1998-03-01')
+        self.assertEqual(self.query(date_from='2014-04-08')[0], 'date:2014-04-08..')
+        self.assertEqual(self.query(all='  ')[0], '')
+
+    def test_generated_query_finds_the_right_entries(self):
+        for params, expected in [
+                ({'author': 'ignatiadis', 'date_from': '1997-05-12', 'date_to': '1997-05-20'}, ['1997-05-00-brgmfr-39522']),
+                ({'all': 'dogger', 'exclude': 'corrosion', 'year_from': '2015', 'year_to': '2024'},
+                 ['2015-00-00-sigesfr-dogger']),
+                ({'xtheme': 'dogger'}, ['1997-05-00-brgmfr-39522', '2015-00-00-sigesfr-dogger']),
+                ({'language': 'EN', 'has_note': 'no'}, ['2008-00-00-acparisorg-0003'])]:
+            q, _ = self.query(**params)
+            self.assertEqual([d.key for d, _, _ in search.search(q, sort='date').ranked], expected, q)
+        html = self.c.get('/', {'q': self.query(title='dogger', year_from='2015')[0]}).content.decode()
+        self.assertIn('2015-00-00-sigesfr-dogger', html)
+
+    def test_validation_errors_stay_on_the_form(self):
+        for params, msg in [({'date_from': '1997-13'}, 'Date invalide'), ({'date_from': '1997/05'}, 'Format attendu'),
+                            ({'year_from': '2000', 'year_to': '1990'}, 'précède'), ({'date_to': '1997-02-30'}, 'Date invalide')]:
+            r = self.c.get('/recherche-avancee/', params)
+            self.assertEqual(r.status_code, 200, params)
+            self.assertIn(msg, r.content.decode(), params)
 
 
 class SourceFilesTests(FrTestCase):

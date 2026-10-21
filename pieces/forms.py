@@ -222,3 +222,94 @@ class PieceForm(forms.Form):
             entry['markdown'] = cd['markdown']
         set_bibtex(entry, cd['overrides'])
         return entry
+
+
+_TERM = re.compile(r'"[^"]*"|\S+')
+HAS_FIELDS = [('url', 'adresse (url)'), ('file', 'fichier'), ('note', 'note'), ('abstract', 'résumé'), ('keywords', 'mots-clés'),
+              ('override', 'surcharges du .bib')]
+
+
+class AdvancedSearchForm(forms.Form):
+    """Recherche avancée : les champs sont traduits en requête de la syntaxe habituelle (voir l'aide), affichée ensuite
+    dans la barre de recherche."""
+    all = forms.CharField(label='Tous ces mots', required=False)
+    phrase = forms.CharField(label='Cette expression exacte', required=False)
+    exclude = forms.CharField(label='Aucun de ces mots', required=False)
+    title = forms.CharField(label='Dans le titre', required=False)
+    author = forms.CharField(label='Auteur', required=False)
+    organization = forms.CharField(label='Organisation', required=False)
+    keywords = forms.CharField(label='Mot-clé', required=False)
+    year_from = forms.IntegerField(label='Année : de', required=False, min_value=1, max_value=9999)
+    year_to = forms.IntegerField(label='à', required=False, min_value=1, max_value=9999)
+    date_from = forms.CharField(label='Date : du', required=False, max_length=10,
+                                widget=forms.TextInput(attrs={'placeholder': 'AAAA-MM-JJ', 'maxlength': 10}),
+                                help_text='AAAA, AAAA-MM ou AAAA-MM-JJ ; une date partielle couvre toute sa période.')
+    date_to = forms.CharField(label='au', required=False, max_length=10, widget=forms.TextInput(attrs={'placeholder': 'AAAA-MM-JJ', 'maxlength': 10}))
+    sort = forms.ChoiceField(label='Tri', required=False, choices=[])
+
+    # liste déroulante (champ de recherche, étiquette, requête de la forme champ:valeur)
+    SELECTS = [('entrytype', 'ENTRYTYPE', 'entrytype'), ('xtheme', 'Thème', 'theme'), ('xtype', 'Nature', 'nature'),
+               ('type', 'Type', 'type'), ('xacronym', 'Source', 'acr'), ('language', 'Langue', 'lang')]
+
+    def __init__(self, *args, choices=None, sorts=(), **kwargs):
+        super().__init__(*args, **kwargs)
+        choices = choices or {}
+        self.fields['sort'].choices = [('', 'Pertinence')] + [(v, label) for v, label in sorts if v != 'rel']
+        for name, label, _ in self.SELECTS:
+            self.fields[name] = forms.ChoiceField(label=label, required=False, choices=[('', '—')] + [(v, v) for v in choices.get(name, [])])
+        for name, label in HAS_FIELDS:
+            self.fields['has_' + name] = forms.ChoiceField(
+                label=label, required=False, choices=[('', '—'), ('has', 'avec'), ('no', 'sans')])
+        self.order = ['all', 'phrase', 'exclude', 'title', 'author', 'organization', 'keywords',
+                      *[n for n, _, _ in self.SELECTS], 'year_from', 'year_to', 'date_from', 'date_to',
+                      *['has_' + n for n, _ in HAS_FIELDS], 'sort']
+        self.fields = {n: self.fields[n] for n in self.order}
+
+    def clean(self):
+        cd = super().clean()
+        for f in ('date_from', 'date_to'):
+            v = (cd.get(f) or '').strip()
+            if v and not re.fullmatch(r'\d{4}(-\d{2}(-\d{2})?)?', v):
+                self.add_error(f, 'Format attendu : AAAA, AAAA-MM ou AAAA-MM-JJ.')
+            elif v:
+                from .search import _span
+                if not _span(v):
+                    self.add_error(f, 'Date invalide.')
+        a, b = cd.get('year_from'), cd.get('year_to')
+        if a and b and a > b:
+            self.add_error('year_to', "L'année de fin précède celle de début.")
+        return cd
+
+    def build_query(self):
+        """Requête (syntaxe de la barre de recherche) équivalente aux champs remplis."""
+        cd = self.cleaned_data
+        parts = []
+        if cd.get('all'):
+            parts.append(cd['all'].strip())
+        if cd.get('phrase'):
+            parts.append('"%s"' % cd['phrase'].replace('"', ' ').strip())
+        parts += ['-' + t.lstrip('-') for t in _TERM.findall(cd.get('exclude') or '') if t.lstrip('-')]
+
+        def value(v):
+            v = v.replace('"', ' ').strip()
+            return f'"{v}"' if re.search(r'\s', v) else v
+        for name, key in (('title', 'titre'), ('author', 'auteur'), ('organization', 'org'), ('keywords', 'kw')):
+            if cd.get(name):
+                parts.append(f'{key}:{value(cd[name])}')
+        for name, _, key in self.SELECTS:
+            if cd.get(name):
+                parts.append(f'{key}:{value(cd[name])}')
+        a, b = cd.get('year_from'), cd.get('year_to')
+        if a and b:
+            parts.append(f'year:{a}..{b}')
+        elif a:
+            parts.append(f'year:>={a}')
+        elif b:
+            parts.append(f'year:<={b}')
+        lo, hi = (cd.get('date_from') or '').strip(), (cd.get('date_to') or '').strip()
+        if lo or hi:
+            parts.append(f'date:{lo}..{hi}')
+        for name, _ in HAS_FIELDS:
+            if cd.get('has_' + name):
+                parts.append(f'{cd["has_" + name]}:{name}')
+        return ' '.join(parts)
