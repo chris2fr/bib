@@ -1,4 +1,5 @@
 {% extends "pieces/base.html" %}
+{% load static %}
 {% block content %}
 <h1>{% if creating %}Nouvelle entrée{% else %}Modifier {{ piece.key }}{% endif %}</h1>
 <form method="post" class="edit">
@@ -15,6 +16,8 @@
   <button>Enregistrer</button>
   <a href="{% if piece %}{% url 'detail' piece.key %}{% else %}{% url 'list' %}{% endif %}">Annuler</a>
 </form>
+{{ form.multi_values|json_script:"multi-values" }}
+<script src="{% static 'pieces/multi.js' %}"></script>
 <script>
 // calendrier facultatif : remplit le champ date ; contrôle du format avant l'envoi (le serveur revérifie)
 (function () {

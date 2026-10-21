@@ -27,6 +27,7 @@ class PieceForm(forms.Form):
         self.creating = creating
         self.current_key = current_key            # clé actuelle de l'entrée éditée (None à la création)
         self.shorthand_synced = False
+        self.multi_values = {f: helpers.choices(f) for f in helpers.MULTI_FIELDS}
         self.fields['key'] = forms.CharField(
             label='Clé (ID)', strip=True,
             help_text='Identifiant de citation, aussi utilisé dans le .bib. Forme habituelle : AAAA-MM-JJ-acronyme-compteur. '
@@ -40,6 +41,8 @@ class PieceForm(forms.Form):
             if f == 'date':
                 widget = forms.TextInput(attrs={'placeholder': 'AAAA-MM-JJ', 'maxlength': 10, 'inputmode': 'numeric',
                                                 'pattern': r'\d{4}-\d{2}-\d{2}', 'title': 'AAAA-MM-JJ, MM et JJ peuvent valoir 00'})
+            if f in helpers.MULTI_FIELDS:         # complétion pendant la frappe (multi.js)
+                widget = forms.Textarea(attrs={'rows': LONG.get(f, 2), 'data-multi': f, 'autocomplete': 'off'})
             if f == 'xtime':
                 widget = forms.TextInput(attrs={'placeholder': 'HH:MM', 'maxlength': 5, 'inputmode': 'numeric',
                                                 'pattern': r'([01]\d|2[0-3]):[0-5]\d', 'title': 'HH:MM, de 00:00 à 23:59'})
@@ -47,7 +50,8 @@ class PieceForm(forms.Form):
                 widget = self._zone_widget()
             self.fields[f] = forms.CharField(label=f, required=False, strip=False, widget=widget,
                                              help_text={'date': DATE_HELP, 'xtime': TIME_HELP,
-                                                        'xtimezone': 'Facultatif ; vide = heure sans fuseau.'}.get(f, ''))
+                                                        'xtimezone': 'Facultatif ; vide = heure sans fuseau.',
+                        'keywords': 'Séparés par des virgules ; les mots-clés déjà connus sont proposés pendant la frappe.'}.get(f, ''))
             if f in helpers.HELPER_FIELDS:
                 self._helper(f)
         self.fields['extra_json'] = forms.CharField(

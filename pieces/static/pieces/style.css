@@ -34,3 +34,8 @@ details.text[open] > summary::before { content: "▾"; }
 details.text > summary h2 { display: inline; }
 .datewrap { display: flex; gap: .5rem; align-items: center; }
 .datewrap input[type=date] { width: auto; flex: none; }
+.multiwrap { position: relative; display: block; }
+.suggest { position: absolute; z-index: 10; left: 0; right: 0; top: 100%; margin: 0; padding: 0; list-style: none;
+  background: Canvas; color: CanvasText; border: 1px solid var(--line); border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,.15); }
+.suggest li { padding: .25rem .5rem; cursor: pointer; }
+.suggest li.active, .suggest li:hover { background: rgba(27,106,201,.18); }

@@ -325,6 +325,20 @@ class ViewTests(FrTestCase):
             self.assertEqual(c.fetchone()[0], 0)                       # vide par défaut pour l'existant
         self.assertIsNone(Piece.objects.get(key=self.key).xtimezone)
 
+    def test_keywords_helper(self):
+        self.assertEqual(helpers.choices('keywords'), ['corrosion', 'géothermie', 'nappe'])     # découpés sur « , » et « ; »
+        page = self.c.get(f'/p/{self.key}/modifier/').content.decode()
+        self.assertIn('data-multi="keywords"', page)
+        self.assertIn('id="multi-values"', page)
+        self.assertIn('multi.js', page)
+        entry = Piece.objects.get(key=self.key).to_entry()
+        self.c.post(f'/p/{self.key}/modifier/', self._post_data(entry, keywords='géothermie, corrosion;nouveau mot'), follow=True)
+        self.assertEqual(Piece.objects.get(key=self.key).keywords, 'géothermie, corrosion;nouveau mot')   # texte saisi conservé tel quel
+        self.assertIn('nouveau mot', helpers.choices('keywords'))
+        from .models import HelperValue
+        HelperValue.objects.filter(field='keywords').delete()
+        self.assertIn('nappe', helpers.choices('keywords'))                                       # champ multiple vide : rempli de nouveau
+
     def test_edit_validation(self):
         entry = Piece.objects.get(key=self.key).to_entry()
         for field, value, msg in [('abstract', 'x { y', 'déséquilibrées'), ('bibtex_json', '[1]', 'objet JSON'),
