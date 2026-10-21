@@ -8,6 +8,8 @@ import json, os, sqlite3, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from frlib import BIB, entry_to_row
 
+COLUMN_DEFS = {'xtimezone': "xtimezone TEXT DEFAULT 'Europe/Paris'"}   # défaut de la colonne ; json2db écrit NULL (vide) explicitement
+
 
 def create_schema(db):
     """Crée la table pieces, l'index FTS5 à contenu externe et les triggers (base vide)."""
@@ -16,7 +18,7 @@ CREATE TABLE pieces (
   n INTEGER PRIMARY KEY,                     -- numéro de ligne stable (garde l'index FTS valide après VACUUM)
   id TEXT NOT NULL UNIQUE,                   -- = clé de citation
   entrytype TEXT,
-  {", ".join(f"{c} TEXT" for c in BIB)},     -- valeurs de base (ex-frontmatter, sinon ex-bibtex)
+  {", ".join(COLUMN_DEFS.get(c, f"{c} TEXT") for c in BIB)},     -- valeurs de base (ex-frontmatter, sinon ex-bibtex)
   extra TEXT NOT NULL CHECK (json_valid(extra)),                    -- champs sans équivalent BibTeX (JSON)
   bibtex TEXT CHECK (bibtex IS NULL OR json_valid(bibtex)),         -- surcharges du .bib (JSON), NULL si aucune
   markdown TEXT NOT NULL,

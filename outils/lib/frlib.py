@@ -7,7 +7,7 @@ L'ordre des clés est conservé dans `field_order` pour que l'export redonne exa
 import json
 
 BIB = ['title', 'author', 'abstract', 'note', 'number', 'organization', 'type', 'xtype', 'keywords', 'xtheme',
-       'date', 'year', 'language', 'xcounter', 'xacronym', 'shorthand', 'url', 'howpublished', 'xtime', 'xdatetime',
+       'date', 'year', 'language', 'xcounter', 'xacronym', 'shorthand', 'url', 'howpublished', 'xtime', 'xdatetime', 'xtimezone',
        'file', 'publisher', 'urldate', 'annote', 'volume', 'medium', 'issue', 'collection', 'archive', 'edition',
        'xduplicate', 'shorthand2']
 BIBSET = frozenset(BIB)

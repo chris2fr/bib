@@ -290,6 +290,41 @@ class ViewTests(FrTestCase):
         r = self.c.post('/p/1997-05-00-brgmfr-x2/modifier/', self._post_data(entry, key='a b/c'))
         self.assertIn('Clé invalide', r.content.decode())
 
+    def test_time_timezone_and_xdatetime(self):
+        entry = Piece.objects.get(key=self.key).to_entry()
+        for bad in ['25:00', '9:5', '12:60', '1230']:
+            r = self.c.post(f'/p/{self.key}/modifier/', self._post_data(entry, date='2014-04-08', xtime=bad))
+            self.assertIn('Format attendu : HH:MM', r.content.decode(), bad)
+        r = self.c.post(f'/p/{self.key}/modifier/', self._post_data(entry, xtime='14:30'))           # date 1997-05-00 incomplète
+        self.assertIn('exige une date complète', r.content.decode())
+        r = self.c.post(f'/p/{self.key}/modifier/', self._post_data(entry, date='2014-04-08', xtime='14:30', xtimezone='Mars/Olympus'))
+        self.assertIn('Fuseau horaire inconnu', r.content.decode())
+
+        def save(**kw):
+            self.c.post(f'/p/{self.key}/modifier/', self._post_data(entry, **kw), follow=True)
+            return Piece.objects.get(key=self.key)
+        p = save(date='2014-04-08', xtime='14:30', xdatetime='ignoré')
+        self.assertEqual((p.xtime, p.xtimezone, p.xdatetime), ('14:30', None, '2014-04-08T14:30'))   # sans fuseau : heure seule
+        self.assertEqual(save(date='2014-04-08', xtime='14:30', xtimezone='Europe/Paris').xdatetime, '2014-04-08T14:30+02:00')
+        self.assertEqual(save(date='2014-01-08', xtime='14:30', xtimezone='Europe/Paris').xdatetime, '2014-01-08T14:30+01:00')
+        self.assertEqual(save(date='2014-01-08', xtime='00:00', xtimezone='America/New_York').xdatetime, '2014-01-08T00:00-05:00')
+        self.assertEqual(save(date='2014-01-08', xtime='', xtimezone='Europe/Paris').xdatetime, None)  # heure effacée
+        self.assertIn('<select name="xtimezone"', self.c.get(f'/p/{self.key}/modifier/').content.decode())
+        self.assertIn('<option value="Europe/Paris"', self.c.get(f'/p/{self.key}/modifier/').content.decode())
+
+    def test_xtimezone_column_added_to_old_database(self):
+        from . import schema
+        with connection.cursor() as c:
+            c.execute('ALTER TABLE pieces DROP COLUMN xtimezone')
+        schema._ok = False
+        schema.ensure()
+        with connection.cursor() as c:
+            c.execute("SELECT name, dflt_value FROM pragma_table_info('pieces') WHERE name = 'xtimezone'")
+            self.assertEqual(c.fetchall(), [('xtimezone', "'Europe/Paris'")])
+            c.execute('SELECT COUNT(*) FROM pieces WHERE xtimezone IS NOT NULL')
+            self.assertEqual(c.fetchone()[0], 0)                       # vide par défaut pour l'existant
+        self.assertIsNone(Piece.objects.get(key=self.key).xtimezone)
+
     def test_edit_validation(self):
         entry = Piece.objects.get(key=self.key).to_entry()
         for field, value, msg in [('abstract', 'x { y', 'déséquilibrées'), ('bibtex_json', '[1]', 'objet JSON'),

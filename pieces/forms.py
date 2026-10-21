@@ -1,4 +1,3 @@
-import calendar
 import json
 import re
 
@@ -6,29 +5,13 @@ from django import forms
 from frlib import BIB, BIBSET, SPECIAL, check_braces, put_field, set_bibtex
 
 from . import helpers
+from .dates import check_date, check_time, check_timezone, is_full_date, make_datetime, timezones
 from .models import Piece
 
 LONG = {'abstract': 6, 'note': 3, 'annote': 3, 'keywords': 2, 'file': 2}
 KEY_RE = re.compile(r'^[\w][\w.+:-]*$')
-DATE_RE = re.compile(r'^(\d{4})-(\d{2})-(\d{2})$')
 DATE_HELP = 'AAAA-MM-JJ ; MM et JJ valent 00 si inconnus (1997-05-00, 1997-00-00). L\'année est calculée à partir de la date.'
-
-
-def check_date(value):
-    """Message d'erreur si value n'est pas une date ISO AAAA-MM-JJ (MM ou JJ éventuellement 00), sinon None."""
-    m = DATE_RE.match(value)
-    if not m:
-        return 'Format attendu : AAAA-MM-JJ (MM et JJ peuvent valoir 00).'
-    y, mo, d = map(int, m.groups())
-    if y < 1:
-        return 'Année invalide.'
-    if mo > 12:
-        return 'Mois invalide (00 à 12).'
-    if mo == 0 and d:
-        return 'Un mois 00 impose un jour 00.'
-    if d and d > calendar.monthrange(y, mo)[1]:
-        return f'Jour invalide : {y:04d}-{mo:02d} n\'a pas {d} jours.'
-    return None
+TIME_HELP = 'HH:MM (00:00 à 23:59). xdatetime est calculé : date complète + heure (+ fuseau, s\'il est choisi).'
 
 
 def _nl(v):
@@ -51,14 +34,20 @@ class PieceForm(forms.Form):
         self.fields['entrytype'] = forms.CharField(label='ENTRYTYPE', initial='misc', strip=True)
         self._helper('entrytype', required=True)
         for f in BIB:
-            if f == 'year':                   # calculée à partir de la date (voir build_entry)
+            if f in ('year', 'xdatetime'):    # calculés à partir de la date, de l'heure et du fuseau (voir build_entry)
                 continue
             widget = forms.Textarea(attrs={'rows': LONG[f]}) if f in LONG else forms.TextInput()
             if f == 'date':
                 widget = forms.TextInput(attrs={'placeholder': 'AAAA-MM-JJ', 'maxlength': 10, 'inputmode': 'numeric',
                                                 'pattern': r'\d{4}-\d{2}-\d{2}', 'title': 'AAAA-MM-JJ, MM et JJ peuvent valoir 00'})
+            if f == 'xtime':
+                widget = forms.TextInput(attrs={'placeholder': 'HH:MM', 'maxlength': 5, 'inputmode': 'numeric',
+                                                'pattern': r'([01]\d|2[0-3]):[0-5]\d', 'title': 'HH:MM, de 00:00 à 23:59'})
+            if f == 'xtimezone':
+                widget = self._zone_widget()
             self.fields[f] = forms.CharField(label=f, required=False, strip=False, widget=widget,
-                                             help_text=DATE_HELP if f == 'date' else '')
+                                             help_text={'date': DATE_HELP, 'xtime': TIME_HELP,
+                                                        'xtimezone': 'Facultatif ; vide = heure sans fuseau.'}.get(f, ''))
             if f in helpers.HELPER_FIELDS:
                 self._helper(f)
         self.fields['extra_json'] = forms.CharField(
@@ -72,6 +61,13 @@ class PieceForm(forms.Form):
         self.fields['markdown'] = forms.CharField(
             label='Markdown', required=False, strip=False,
             widget=forms.Textarea(attrs={'rows': 24, 'class': 'mono'}))
+
+    def _zone_widget(self):
+        zones = timezones()
+        current = self.data.get('xtimezone') if self.is_bound else self.initial.get('xtimezone')
+        if current and current not in zones:
+            zones = [*zones, current]              # valeur héritée inconnue : conservée, signalée à l'enregistrement
+        return forms.Select(choices=[('', '—')] + [(z, z) for z in zones])
 
     def _helper(self, name, required=False):
         """Champ à liste déroulante (table helper_values) suivi d'un champ « nouvelle valeur » qui l'emporte s'il est rempli."""
@@ -93,7 +89,7 @@ class PieceForm(forms.Form):
                    'extra_json': json.dumps({k: v for k, v in entry.items() if k not in SPECIAL and k not in BIBSET},
                                             ensure_ascii=False, indent=2),
                    'bibtex_json': json.dumps(entry['bibtex'], ensure_ascii=False, indent=2) if entry.get('bibtex') else ''}
-        initial.update({f: entry[f] for f in BIB if f in entry and f != 'year'})
+        initial.update({f: entry[f] for f in BIB if f in entry and f not in ('year', 'xdatetime')})
         return cls(initial=initial, **kw)
 
     def clean_date(self):
@@ -102,6 +98,20 @@ class PieceForm(forms.Form):
         if error:
             raise forms.ValidationError(error)
         return date
+
+    def clean_xtime(self):
+        value = (self.cleaned_data.get('xtime') or '').strip()
+        error = check_time(value) if value else None
+        if error:
+            raise forms.ValidationError(error)
+        return value
+
+    def clean_xtimezone(self):
+        value = (self.cleaned_data.get('xtimezone') or '').strip()
+        error = check_timezone(value) if value else None
+        if error:
+            raise forms.ValidationError(error)
+        return value
 
     def clean_key(self):
         key = self.cleaned_data['key']
@@ -114,6 +124,8 @@ class PieceForm(forms.Form):
     def clean(self):
         cd = super().clean()
         key = cd.get('key', '(nouvelle entrée)')
+        if cd.get('xtime') and 'date' not in self.errors and not is_full_date(cd.get('date') or ''):
+            self.add_error('xtime', 'Une heure exige une date complète (AAAA-MM-JJ sans 00).')
         for f in helpers.HELPER_FIELDS:
             if (cd.get(f + '_new') or '').strip():
                 cd[f] = cd[f + '_new'].strip()
@@ -169,6 +181,14 @@ class PieceForm(forms.Form):
                     v = None                  # date effacée : l'année calculée disparaît avec elle
                 else:
                     continue                  # pas de date : année héritée, laissée telle quelle
+            elif f == 'xdatetime':
+                new = make_datetime(cd.get('date'), cd.get('xtime'), cd.get('xtimezone'))
+                if new:
+                    v = new
+                elif old and old.get('date') and old.get('xtime'):
+                    v = None                  # date ou heure effacée : xdatetime calculé disparaît
+                else:
+                    continue                  # rien à calculer : valeur héritée laissée telle quelle
             if not v:
                 entry.pop(f, None)
             elif entry.get(f) != v:

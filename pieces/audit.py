@@ -3,6 +3,7 @@ import re
 from collections import OrderedDict
 
 from .corpus import get_corpus
+from .dates import check_time, check_timezone, make_datetime
 
 KEY_RE = re.compile(r'^(\d{4})-(\d{2})-(\d{2})-([a-z0-9]+)-(.+)$')
 DATE_RE = re.compile(r'^\d{4}-(0\d|1[0-2])-\d{2}$')
@@ -15,6 +16,9 @@ CHECKS = OrderedDict([
     ('counter', 'xcounter différent du compteur de la clé'),
     ('shorthand', 'shorthand différent de la clé'),
     ('date-format', 'Date mal formée (attendu AAAA-MM-JJ, MM et JJ pouvant valoir 00)'),
+    ('time-format', 'Heure xtime mal formée (attendu HH:MM)'),
+    ('timezone', 'Fuseau xtimezone inconnu'),
+    ('datetime', 'xdatetime différent de date + xtime + xtimezone'),
     ('missing-title', 'Titre absent'),
     ('missing-date', 'Date absente'),
 ])
@@ -48,6 +52,13 @@ def run_audit():
             found['shorthand'].append((d, f'shorthand {v["shorthand"]}'))
         if d.date and not DATE_RE.match(d.date):
             found['date-format'].append((d, d.date))
+        if v['xtime'] and check_time(v['xtime']):
+            found['time-format'].append((d, v['xtime']))
+        if v['xtimezone'] and check_timezone(v['xtimezone']):
+            found['timezone'].append((d, v['xtimezone']))
+        expected = make_datetime(d.date, v['xtime'], v['xtimezone'])
+        if expected and v['xdatetime'] != expected:
+            found['datetime'].append((d, f'attendu {expected}, xdatetime {v["xdatetime"] or "(vide)"}'))
         if not v['title']:
             found['missing-title'].append((d, ''))
         if not d.date:

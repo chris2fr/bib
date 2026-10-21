@@ -35,6 +35,7 @@ class Piece(models.Model):
     howpublished = models.TextField(null=True, blank=True)
     xtime = models.TextField(null=True, blank=True)
     xdatetime = models.TextField(null=True, blank=True)
+    xtimezone = models.TextField(null=True, blank=True)
     file = models.TextField(null=True, blank=True)
     publisher = models.TextField(null=True, blank=True)
     urldate = models.TextField(null=True, blank=True)

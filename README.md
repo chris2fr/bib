@@ -74,6 +74,12 @@ cohérence entre la clé `AAAA-MM-JJ-acronyme-compteur` et `year`, `date`, `xacr
 Formulaire pour les champs BibTeX (valeurs de base), les autres champs (JSON), les surcharges du .bib (JSON ; `null` supprime un
 champ du .bib) et le markdown. Contrôles : accolades équilibrées (sinon l'export .bib échouerait), JSON valide, champs réservés,
 clé unique. Les retours à la ligne des navigateurs (CRLF) sont normalisés : enregistrer sans rien changer ne modifie rien.
+**Heure et fuseau** : `xtime` est au format `HH:MM` (00:00–23:59). `xtimezone` se choisit dans la liste des fuseaux IANA
+(vide par défaut ; la colonne a pour valeur par défaut SQL `Europe/Paris`, mais l'application écrit NULL quand rien n'est choisi,
+et une base existante reçoit la colonne vide au premier accès). `xdatetime` est calculé, comme `year` : il combine la date
+**complète** (sans `00`) et `xtime` — `2014-04-08T14:30` — et, si un fuseau est choisi, l'ISO dans ce fuseau, heure d'été
+comprise — `2014-04-08T14:30+02:00`. Une heure sans date complète est refusée ; l'audit contrôle format, fuseau et cohérence.
+
 **Clé (ID)** : la clé de citation (colonne `id`, utilisée dans le .bib) est affichée et modifiable à l'édition. Renommer
 la clé met `shorthand` à jour (il vaut la clé par défaut), sauf s'il a été personnalisé ou modifié dans le même formulaire.
 Les autres champs qui citent l'ancienne clé (`xduplicate`, `xacronym`, `xcounter`...) ne sont pas réécrits : l'audit les signale.
