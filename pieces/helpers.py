@@ -30,7 +30,7 @@ def split_multi(text):
 def _seed_multi(c, field):
     c.execute(f'SELECT {field} FROM pieces WHERE TRIM(COALESCE({field}, \'\')) != \'\'')
     values = {v for (text,) in c.fetchall() for v in split_multi(text)}
-    c.executemany('INSERT OR IGNORE INTO helper_values (field, value) VALUES (?, ?)', [(field, v) for v in sorted(values)])
+    c.executemany('INSERT OR IGNORE INTO helper_values (field, value) VALUES (%s, %s)', [(field, v) for v in sorted(values)])
 
 
 def ensure():
@@ -44,7 +44,7 @@ def ensure():
                 c.execute(f"INSERT OR IGNORE INTO helper_values (field, value) "
                           f"SELECT DISTINCT '{f}', TRIM({f}) FROM pieces WHERE TRIM(COALESCE({f}, '')) != ''")
         for f in MULTI_FIELDS:
-            c.execute('SELECT 1 FROM helper_values WHERE field = ? LIMIT 1', [f])
+            c.execute('SELECT 1 FROM helper_values WHERE field = %s LIMIT 1', [f])
             if not c.fetchone():
                 _seed_multi(c, f)
 
