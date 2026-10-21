@@ -27,3 +27,8 @@ th { width: 10rem; }
 .field { display: flex; flex-direction: column; gap: .15rem; }
 .field input, .field textarea { font: inherit; padding: .35rem; width: 100%; box-sizing: border-box; }
 .markdown .page { text-align: center; border-top: 1px dashed var(--line); margin: 1.5rem 0; color: var(--muted); font-size: .8rem; }
+details.text > summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: .5rem; }
+details.text > summary::-webkit-details-marker { display: none; }
+details.text > summary::before { content: "▸"; color: var(--muted); }
+details.text[open] > summary::before { content: "▾"; }
+details.text > summary h2 { display: inline; }

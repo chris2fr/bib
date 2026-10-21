@@ -199,6 +199,10 @@ class ViewTests(FrTestCase):
         self.assertNotIn('<script', html)
         self.assertNotIn('onerror', html)
 
+    def test_detail_text_folded_by_default(self):
+        self.assertIn('<details class="text">', self.c.get(f'/p/{self.key}/').content.decode())
+        self.assertIn('<details class="text" open>', self.c.get(f'/p/{self.key}/?full=1').content.decode())
+
     def _post_data(self, entry, **changes):
         data = dict(PieceForm.from_entry(entry).initial)
         data = {k: v.replace('\n', '\r\n') if isinstance(v, str) else v for k, v in data.items()}
