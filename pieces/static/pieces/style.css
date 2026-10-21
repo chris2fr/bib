@@ -32,3 +32,5 @@ details.text > summary::-webkit-details-marker { display: none; }
 details.text > summary::before { content: "▸"; color: var(--muted); }
 details.text[open] > summary::before { content: "▾"; }
 details.text > summary h2 { display: inline; }
+.datewrap { display: flex; gap: .5rem; align-items: center; }
+.datewrap input[type=date] { width: auto; flex: none; }

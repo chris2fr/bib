@@ -7,7 +7,7 @@
   {% for field in form %}
   <p class="field">
     <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-    {{ field }}
+    {% if field.name == 'date' %}<span class="datewrap">{{ field }}<input type="date" id="datepick" aria-label="Choisir dans un calendrier" title="Calendrier (facultatif)"></span>{% else %}{{ field }}{% endif %}
     {% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}
     {% if field.errors %}<span class="error">{{ field.errors|join:" " }}</span>{% endif %}
   </p>
@@ -15,4 +15,28 @@
   <button>Enregistrer</button>
   <a href="{% if piece %}{% url 'detail' piece.key %}{% else %}{% url 'list' %}{% endif %}">Annuler</a>
 </form>
+<script>
+// calendrier facultatif : remplit le champ date ; contrôle du format avant l'envoi (le serveur revérifie)
+(function () {
+  var t = document.getElementById('id_date'), p = document.getElementById('datepick');
+  if (!t || !p) return;
+  function problem(v) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+    if (!m) return 'Format attendu : AAAA-MM-JJ (MM et JJ peuvent valoir 00).';
+    var y = +m[1], mo = +m[2], d = +m[3];
+    if (y < 1) return 'Année invalide.';
+    if (mo > 12) return 'Mois invalide (00 à 12).';
+    if (mo === 0 && d) return 'Un mois 00 impose un jour 00.';
+    if (d && d > new Date(y, mo, 0).getDate()) return 'Jour invalide pour ce mois.';
+    return '';
+  }
+  function sync() {
+    t.setCustomValidity(t.value ? problem(t.value) : '');
+    p.value = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(t.value) && !problem(t.value) ? t.value : '';
+  }
+  t.addEventListener('input', sync);
+  p.addEventListener('change', function () { if (p.value) { t.value = p.value; sync(); } });
+  sync();
+})();
+</script>
 {% endblock %}

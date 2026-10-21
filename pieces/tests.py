@@ -239,6 +239,27 @@ class ViewTests(FrTestCase):
         self.assertEqual(Piece.objects.get(key='2026-01-01-new-0001').entrytype, 'techreport')
         self.assertIn('techreport', helpers.choices('entrytype'))
 
+    def test_date_validation_and_computed_year(self):
+        entry = Piece.objects.get(key=self.key).to_entry()
+        for bad in ['1997', '97-05-00', '1997-13-01', '1997-00-05', '1997-02-30', '1997-5-1', '0000-01-01']:
+            r = self.c.post(f'/p/{self.key}/modifier/', self._post_data(entry, date=bad))
+            self.assertEqual(r.status_code, 200, bad)
+            self.assertTrue('Format attendu' in r.content.decode() or 'invalide' in r.content.decode() or 'impose' in r.content.decode(), bad)
+        self.assertEqual(Piece.objects.get(key=self.key).date, '1997-05-00')
+        for good, year in [('2024-02-29', '2024'), ('1998-00-00', '1998'), ('1999-12-00', '1999')]:
+            self.c.post(f'/p/{self.key}/modifier/', self._post_data(entry, date=good, year='1111'), follow=True)
+            p = Piece.objects.get(key=self.key)
+            self.assertEqual((p.date, p.year), (good, year))          # le champ year envoyé est ignoré
+        self.c.post(f'/p/{self.key}/modifier/', self._post_data(entry, date=''), follow=True)
+        self.assertIsNone(Piece.objects.get(key=self.key).year)       # date effacée : année calculée supprimée
+        legacy = Piece.objects.get(key='2008-00-00-acparisorg-0003')
+        legacy.date = None
+        legacy.save(update_fields=['date'])
+        e = legacy.to_entry()
+        self.c.post(f'/p/{legacy.key}/modifier/', self._post_data(e, title='Autre titre'), follow=True)
+        self.assertEqual(Piece.objects.get(key=legacy.key).year, '2008')   # sans date : année héritée conservée
+        self.assertIn('id="datepick"', self.c.get(f'/p/{self.key}/modifier/').content.decode())
+
     def test_edit_validation(self):
         entry = Piece.objects.get(key=self.key).to_entry()
         for field, value, msg in [('abstract', 'x { y', 'déséquilibrées'), ('bibtex_json', '[1]', 'objet JSON'),

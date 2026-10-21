@@ -5,15 +5,16 @@ from collections import OrderedDict
 from .corpus import get_corpus
 
 KEY_RE = re.compile(r'^(\d{4})-(\d{2})-(\d{2})-([a-z0-9]+)-(.+)$')
-DATE_RE = re.compile(r'^\d{4}(-\d{2}(-\d{2})?)?$')
+DATE_RE = re.compile(r'^\d{4}-(0\d|1[0-2])-\d{2}$')
 CHECKS = OrderedDict([
     ('key-format', 'Clé hors format AAAA-MM-JJ-acronyme-compteur'),
     ('year', 'Année du champ year différente de celle de la clé'),
     ('date', 'Date différente de celle de la clé'),
+    ('year-date', 'Année (year) différente de celle de la date'),
     ('acronym', 'xacronym différent de l\'acronyme de la clé'),
     ('counter', 'xcounter différent du compteur de la clé'),
     ('shorthand', 'shorthand différent de la clé'),
-    ('date-format', 'Date mal formée (attendu AAAA, AAAA-MM ou AAAA-MM-JJ)'),
+    ('date-format', 'Date mal formée (attendu AAAA-MM-JJ, MM et JJ pouvant valoir 00)'),
     ('missing-title', 'Titre absent'),
     ('missing-date', 'Date absente'),
 ])
@@ -32,6 +33,8 @@ def run_audit():
             if v['year'] and v['year'] != y:
                 found['year'].append((d, f'clé {y}, year {v["year"]}'))
             if d.date and DATE_RE.match(d.date):
+                if v['year'] and v['year'] != d.date[:4]:
+                    found['year-date'].append((d, f'date {d.date}, year {v["year"]}'))
                 parts = d.date.split('-') + ['00', '00']
                 for label, kv, dv in (('année', y, parts[0]), ('mois', mo, parts[1]), ('jour', da, parts[2])):
                     if kv != '00' and dv != '00' and kv != dv:

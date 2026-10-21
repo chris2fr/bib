@@ -1,3 +1,4 @@
+import calendar
 import json
 import re
 
@@ -9,6 +10,25 @@ from .models import Piece
 
 LONG = {'abstract': 6, 'note': 3, 'annote': 3, 'keywords': 2, 'file': 2}
 KEY_RE = re.compile(r'^[\w][\w.+:-]*$')
+DATE_RE = re.compile(r'^(\d{4})-(\d{2})-(\d{2})$')
+DATE_HELP = 'AAAA-MM-JJ ; MM et JJ valent 00 si inconnus (1997-05-00, 1997-00-00). L\'année est calculée à partir de la date.'
+
+
+def check_date(value):
+    """Message d'erreur si value n'est pas une date ISO AAAA-MM-JJ (MM ou JJ éventuellement 00), sinon None."""
+    m = DATE_RE.match(value)
+    if not m:
+        return 'Format attendu : AAAA-MM-JJ (MM et JJ peuvent valoir 00).'
+    y, mo, d = map(int, m.groups())
+    if y < 1:
+        return 'Année invalide.'
+    if mo > 12:
+        return 'Mois invalide (00 à 12).'
+    if mo == 0 and d:
+        return 'Un mois 00 impose un jour 00.'
+    if d and d > calendar.monthrange(y, mo)[1]:
+        return f'Jour invalide : {y:04d}-{mo:02d} n\'a pas {d} jours.'
+    return None
 
 
 def _nl(v):
@@ -28,8 +48,14 @@ class PieceForm(forms.Form):
         self.fields['entrytype'] = forms.CharField(label='ENTRYTYPE', initial='misc', strip=True)
         self._helper('entrytype', required=True)
         for f in BIB:
+            if f == 'year':                   # calculée à partir de la date (voir build_entry)
+                continue
             widget = forms.Textarea(attrs={'rows': LONG[f]}) if f in LONG else forms.TextInput()
-            self.fields[f] = forms.CharField(label=f, required=False, strip=False, widget=widget)
+            if f == 'date':
+                widget = forms.TextInput(attrs={'placeholder': 'AAAA-MM-JJ', 'maxlength': 10, 'inputmode': 'numeric',
+                                                'pattern': r'\d{4}-\d{2}-\d{2}', 'title': 'AAAA-MM-JJ, MM et JJ peuvent valoir 00'})
+            self.fields[f] = forms.CharField(label=f, required=False, strip=False, widget=widget,
+                                             help_text=DATE_HELP if f == 'date' else '')
             if f in helpers.HELPER_FIELDS:
                 self._helper(f)
         self.fields['extra_json'] = forms.CharField(
@@ -64,8 +90,15 @@ class PieceForm(forms.Form):
                    'extra_json': json.dumps({k: v for k, v in entry.items() if k not in SPECIAL and k not in BIBSET},
                                             ensure_ascii=False, indent=2),
                    'bibtex_json': json.dumps(entry['bibtex'], ensure_ascii=False, indent=2) if entry.get('bibtex') else ''}
-        initial.update({f: entry[f] for f in BIB if f in entry})
+        initial.update({f: entry[f] for f in BIB if f in entry and f != 'year'})
         return cls(initial=initial, **kw)
+
+    def clean_date(self):
+        date = (self.cleaned_data.get('date') or '').strip()
+        error = check_date(date) if date else None
+        if error:
+            raise forms.ValidationError(error)
+        return date
 
     def clean_key(self):
         key = self.cleaned_data['key']
@@ -125,6 +158,13 @@ class PieceForm(forms.Form):
         put_field(entry, 'ENTRYTYPE', cd['entrytype'])
         for f in BIB:
             v = cd.get(f)
+            if f == 'year':
+                if cd.get('date'):
+                    v = cd['date'][:4]
+                elif old and old.get('date'):
+                    v = None                  # date effacée : l'année calculée disparaît avec elle
+                else:
+                    continue                  # pas de date : année héritée, laissée telle quelle
             if not v:
                 entry.pop(f, None)
             elif entry.get(f) != v:

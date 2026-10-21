@@ -74,6 +74,11 @@ cohérence entre la clé `AAAA-MM-JJ-acronyme-compteur` et `year`, `date`, `xacr
 Formulaire pour les champs BibTeX (valeurs de base), les autres champs (JSON), les surcharges du .bib (JSON ; `null` supprime un
 champ du .bib) et le markdown. Contrôles : accolades équilibrées (sinon l'export .bib échouerait), JSON valide, champs réservés,
 clé unique. Les retours à la ligne des navigateurs (CRLF) sont normalisés : enregistrer sans rien changer ne modifie rien.
+**Dates** : `date` doit être au format ISO `AAAA-MM-JJ`, `MM` et `JJ` pouvant valoir `00` (`1997-05-00`, `1997-00-00`) ; mois, jour et
+longueur du mois sont contrôlés à l'enregistrement (et dans le navigateur, avant l'envoi). `year` n'est plus saisi : il est
+calculé à partir de la date. Un petit calendrier facultatif remplit le champ (il ne sait pas écrire `00`, tapez-les à la main).
+Une entrée sans date garde son `year` hérité ; l'audit signale les dates mal formées et les `year` incohérents.
+
 **Listes d'aide** : `ENTRYTYPE`, `xtheme` et `xacronym` sont des listes déroulantes alimentées par une table indépendante
 `helper_values` de la même base. Elle est créée au premier usage et remplie par un `SELECT DISTINCT` sur les valeurs
 existantes ; pour ajouter une valeur, remplissez le champ « nouvelle valeur » sous la liste (il l'emporte sur le choix), elle
