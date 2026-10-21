@@ -7,7 +7,7 @@ from django.db import connection
 from django.test import Client, TestCase, override_settings
 from frlib import BIBSET, SPECIAL
 
-from . import search
+from . import helpers, search
 from .audit import run_audit
 from .corpus import bump
 from .forms import PieceForm
@@ -223,6 +223,21 @@ class ViewTests(FrTestCase):
         self.assertEqual(new['piece_fond'], 12)                       # champs « autres » intacts
         self.assertIn(self.key, [d.key for d, _, _ in search.search('zzyzx').ranked])   # FTS et cache à jour
         self.assertEqual(list(new)[:3], list(entry)[:3])               # l'ordre des champs est conservé
+
+    def test_helper_lists_seeded_and_extended(self):
+        self.assertEqual(helpers.choices('entrytype'), ['misc'])
+        self.assertIn('géothermie', helpers.choices('xtheme'))
+        self.assertIn('sigesfr', helpers.choices('xacronym'))
+        page = self.c.get(f'/p/{self.key}/modifier/').content.decode()
+        self.assertIn('<select name="xtheme"', page)
+        self.assertIn('name="xtheme_new"', page)
+        entry = Piece.objects.get(key=self.key).to_entry()
+        self.c.post(f'/p/{self.key}/modifier/', self._post_data(entry, xtheme='dogger', xtheme_new=' sismique '), follow=True)
+        self.assertEqual(Piece.objects.get(key=self.key).xtheme, 'sismique')
+        self.assertIn('sismique', helpers.choices('xtheme'))
+        self.c.post('/nouvelle/', {'key': '2026-01-01-new-0001', 'entrytype': 'misc', 'entrytype_new': 'techreport', 'markdown': ''})
+        self.assertEqual(Piece.objects.get(key='2026-01-01-new-0001').entrytype, 'techreport')
+        self.assertIn('techreport', helpers.choices('entrytype'))
 
     def test_edit_validation(self):
         entry = Piece.objects.get(key=self.key).to_entry()

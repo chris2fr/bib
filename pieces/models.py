@@ -92,3 +92,16 @@ class Piece(models.Model):
     @property
     def overrides(self):
         return json.loads(self.bibtex) if self.bibtex else {}
+
+
+class HelperValue(models.Model):
+    """Valeur proposée dans une liste déroulante du formulaire (voir helpers.py); table créée à la demande."""
+    field = models.CharField(max_length=32)
+    value = models.TextField()
+
+    class Meta:
+        managed = False
+        db_table = 'helper_values'
+
+    def __str__(self):
+        return f'{self.field}={self.value}'

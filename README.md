@@ -74,6 +74,10 @@ cohérence entre la clé `AAAA-MM-JJ-acronyme-compteur` et `year`, `date`, `xacr
 Formulaire pour les champs BibTeX (valeurs de base), les autres champs (JSON), les surcharges du .bib (JSON ; `null` supprime un
 champ du .bib) et le markdown. Contrôles : accolades équilibrées (sinon l'export .bib échouerait), JSON valide, champs réservés,
 clé unique. Les retours à la ligne des navigateurs (CRLF) sont normalisés : enregistrer sans rien changer ne modifie rien.
+**Listes d'aide** : `ENTRYTYPE`, `xtheme` et `xacronym` sont des listes déroulantes alimentées par une table indépendante
+`helper_values` de la même base. Elle est créée au premier usage et remplie par un `SELECT DISTINCT` sur les valeurs
+existantes ; pour ajouter une valeur, remplissez le champ « nouvelle valeur » sous la liste (il l'emporte sur le choix), elle
+est ajoutée à la liste à l'enregistrement. Supprimer la table `helper_values` la fait reconstruire depuis les données.
 `FR_READONLY=1` désactive création, modification et suppression.
 
 ## Réglages (variables d'environnement)

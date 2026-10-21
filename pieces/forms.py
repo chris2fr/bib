@@ -4,6 +4,7 @@ import re
 from django import forms
 from frlib import BIB, BIBSET, SPECIAL, check_braces, put_field, set_bibtex
 
+from . import helpers
 from .models import Piece
 
 LONG = {'abstract': 6, 'note': 3, 'annote': 3, 'keywords': 2, 'file': 2}
@@ -25,9 +26,12 @@ class PieceForm(forms.Form):
             self.fields['key'] = forms.CharField(label='Clé de citation', strip=True,
                                                  help_text='Forme habituelle : AAAA-MM-JJ-acronyme-compteur. Non modifiable ensuite.')
         self.fields['entrytype'] = forms.CharField(label='ENTRYTYPE', initial='misc', strip=True)
+        self._helper('entrytype', required=True)
         for f in BIB:
             widget = forms.Textarea(attrs={'rows': LONG[f]}) if f in LONG else forms.TextInput()
             self.fields[f] = forms.CharField(label=f, required=False, strip=False, widget=widget)
+            if f in helpers.HELPER_FIELDS:
+                self._helper(f)
         self.fields['extra_json'] = forms.CharField(
             label='Autres champs (JSON)', required=False, strip=False, initial='{}',
             widget=forms.Textarea(attrs={'rows': 8, 'class': 'mono'}),
@@ -39,6 +43,20 @@ class PieceForm(forms.Form):
         self.fields['markdown'] = forms.CharField(
             label='Markdown', required=False, strip=False,
             widget=forms.Textarea(attrs={'rows': 24, 'class': 'mono'}))
+
+    def _helper(self, name, required=False):
+        """Champ à liste déroulante (table helper_values) suivi d'un champ « nouvelle valeur » qui l'emporte s'il est rempli."""
+        values = helpers.choices(name)
+        current = self.data.get(name) if self.is_bound else self.initial.get(name, self.fields[name].initial)
+        if current and current not in values:
+            values.append(current)            # valeur déjà utilisée mais absente de la liste : on la garde sélectionnée
+        blank = [] if required else [('', '—')]
+        field = self.fields[name]
+        field.widget = forms.Select(choices=blank + [(v, v) for v in values])
+        field.strip = False
+        self.fields[name + '_new'] = forms.CharField(
+            label=f'{name} : nouvelle valeur', required=False, strip=True,
+            help_text='Si ce champ est rempli, il remplace le choix de la liste ci-dessus et la valeur est ajoutée à la liste.')
 
     @classmethod
     def from_entry(cls, entry, **kw):
@@ -60,6 +78,9 @@ class PieceForm(forms.Form):
     def clean(self):
         cd = super().clean()
         key = cd.get('key', '(nouvelle entrée)')
+        for f in helpers.HELPER_FIELDS:
+            if (cd.get(f + '_new') or '').strip():
+                cd[f] = cd[f + '_new'].strip()
         for f in ['markdown', *BIB]:
             if f in cd:
                 cd[f] = _nl(cd[f])
