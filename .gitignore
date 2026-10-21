@@ -230,3 +230,4 @@ files/
 
 # bibman : réglages locaux (secrets)
 .env
+.zed/
