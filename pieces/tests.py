@@ -2,6 +2,7 @@ import json
 import tempfile
 from pathlib import Path
 
+import frlib
 import json2db
 from django.db import connection
 from django.test import Client, TestCase, override_settings
@@ -220,6 +221,123 @@ class SimilarAuditTests(FrTestCase):
         self.assertIn('2020-01-01-foo-0001', found['year'])
         self.assertIn('2020-01-01-foo-0001', found['acronym'])
         self.assertNotIn('1997-05-00-brgmfr-39522', found['year'])
+
+
+class FieldOrderTests(FrTestCase):
+    key = '1997-05-00-brgmfr-39522'
+
+    def setUp(self):
+        super().setUp()
+        self.c = Client()
+        self.addCleanup(frlib.set_order)                       # retour aux variables d'environnement
+
+    def messy(self):
+        return {'key': 'k-1', 'ENTRYTYPE': 'misc', 'zeta': 1, 'title': 'T', 'Alpha': 2, 'year': '2000', 'author': 'A',
+                'date': '2000-01-01', 'markdown': 'm', 'bibtex': {'title': 'X'}}
+
+    def stored_order(self, entry):
+        return list(frlib.row_to_entry(frlib.entry_to_row(entry)))
+
+    def test_default_is_alphabetical_inside_each_group(self):
+        self.assertEqual(self.stored_order(self.messy()),
+                         ['key', 'ENTRYTYPE', 'author', 'date', 'title', 'year', 'Alpha', 'zeta', 'markdown', 'bibtex'])
+
+    def test_parameter_then_alphabetical_for_the_rest(self):
+        frlib.set_order(bibtex=['title', 'year'], other=['zeta'])
+        self.assertEqual(self.stored_order(self.messy()),
+                         ['key', 'ENTRYTYPE', 'title', 'year', 'author', 'date', 'zeta', 'Alpha', 'markdown', 'bibtex'])
+
+    def test_environment_parameter(self):
+        import os
+        from unittest import mock
+        with mock.patch.dict(os.environ, {'BIBMAN_ORDER_BIBTEX': ' date , title ', 'BIBMAN_ORDER_OTHER': 'zeta'}):
+            self.assertEqual(frlib.field_order('bibtex'), ['date', 'title'])
+            self.assertEqual(self.stored_order(self.messy())[2:7], ['date', 'title', 'author', 'year', 'zeta'])
+
+    def test_bib_export_form_and_detail_follow_the_order(self):
+        def positions(html, *needles):
+            return [html.index(n) for n in needles]
+        page = lambda url: self.c.get(url).content.decode()
+        form_needles = ('name="author"', 'name="date"', 'name="title"')
+        bib_needles = ('author =', 'date =', 'title =')
+        entry = Piece.objects.get(key=self.key).to_entry()
+        self.assertEqual(positions(page(f'/p/{self.key}/modifier/'), *form_needles), sorted(positions(page(f'/p/{self.key}/modifier/'), *form_needles)))
+        text = page(f'/p/{self.key}/bib/')
+        self.assertEqual(positions(text, *bib_needles), sorted(positions(text, *bib_needles)))      # alphabétique par défaut
+        frlib.set_order(bibtex=['title', 'date'])
+        for url, needles in ((f'/p/{self.key}/modifier/', form_needles), (f'/p/{self.key}/bib/', bib_needles)):
+            p = positions(page(url), *needles)
+            self.assertLess(p[2], p[1], url)                                                         # title avant date
+            self.assertLess(p[1], p[0], url)                                                         # date avant author
+        self.assertEqual(list(self.c.get('/export/fr.json').json()[self.key])[:4], ['key', 'ENTRYTYPE', 'title', 'date'])
+        # modifier sans rien changer reste « Aucun changement » quel que soit l'ordre
+        data = {k: v.replace('\n', '\r\n') if isinstance(v, str) else v for k, v in PieceForm.from_entry(entry).initial.items()}
+        self.assertIn('Aucun changement', self.c.post(f'/p/{self.key}/modifier/', data, follow=True).content.decode())
+
+    def test_field_order_column_is_dropped_from_old_databases(self):
+        from . import schema
+        with connection.cursor() as c:
+            c.execute("ALTER TABLE pieces ADD COLUMN field_order TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(field_order))")
+            c.execute('''UPDATE pieces SET field_order = '["markdown","key","title"]' ''')
+        schema._ok = False
+        schema.ensure()
+        with connection.cursor() as c:
+            c.execute("SELECT COUNT(*) FROM pragma_table_info('pieces') WHERE name = 'field_order'")
+            self.assertEqual(c.fetchone()[0], 0)
+        entry = Piece.objects.get(key=self.key).to_entry()
+        self.assertEqual(list(entry)[:2], ['key', 'ENTRYTYPE'])
+        Piece.from_entry({'key': 'k-new-1', 'ENTRYTYPE': 'misc', 'markdown': ''}).save(force_insert=True)      # l'insertion marche sans la colonne
+        self.assertNotIn('markdown', Piece.objects.get(key='k-new-1').to_entry())                             # champ vide = absent
+
+
+class AdvancedSearchTests(FrTestCase):
+    def setUp(self):
+        super().setUp()
+        self.c = Client()
+
+    def query(self, **params):
+        r = self.c.get('/recherche-avancee/', params)
+        self.assertEqual(r.status_code, 302, r.content.decode()[:300] if r.status_code == 200 else '')
+        from urllib.parse import parse_qs, urlparse
+        qs = parse_qs(urlparse(r['Location']).query)
+        return qs.get('q', [''])[0], qs.get('sort', [''])[0]
+
+    def test_page_and_choices(self):
+        html = self.c.get('/recherche-avancee/').content.decode()
+        self.assertIn('name="phrase"', html)
+        self.assertIn('<option value="dogger">', html)                  # listes alimentées par les valeurs du corpus
+        self.assertIn('href="/recherche-avancee/"', self.c.get('/').content.decode())
+
+    def test_builds_the_usual_syntax(self):
+        q, sort = self.query(all='dogger corrosion', phrase='nappe du dogger', exclude='tubage "x y"', title='réseau de chaleur',
+                             author='dupont', organization='brgm', keywords='nappe', xtheme='dogger', language='FR',
+                             year_from='1990', year_to='2000', has_url='has', has_note='no', sort='date')
+        self.assertEqual(q, 'dogger corrosion "nappe du dogger" -tubage -"x y" titre:"réseau de chaleur" auteur:dupont org:brgm kw:nappe '
+                            'theme:dogger lang:FR year:1990..2000 has:url no:note')
+        self.assertEqual(sort, 'date')
+        self.assertEqual(self.query(year_from='2015')[0], 'year:>=2015')
+        self.assertEqual(self.query(date_from='1997-05', date_to='1998-03-01')[0], 'date:1997-05..1998-03-01')
+        self.assertEqual(self.query(date_from='2014-04-08')[0], 'date:2014-04-08..')
+        self.assertEqual(self.query(all='  ')[0], '')
+
+    def test_generated_query_finds_the_right_entries(self):
+        for params, expected in [
+                ({'author': 'ignatiadis', 'date_from': '1997-05-12', 'date_to': '1997-05-20'}, ['1997-05-00-brgmfr-39522']),
+                ({'all': 'dogger', 'exclude': 'corrosion', 'year_from': '2015', 'year_to': '2024'},
+                 ['2015-00-00-sigesfr-dogger']),
+                ({'xtheme': 'dogger'}, ['1997-05-00-brgmfr-39522', '2015-00-00-sigesfr-dogger']),
+                ({'language': 'EN', 'has_note': 'no'}, ['2008-00-00-acparisorg-0003'])]:
+            q, _ = self.query(**params)
+            self.assertEqual([d.key for d, _, _ in search.search(q, sort='date').ranked], expected, q)
+        html = self.c.get('/', {'q': self.query(title='dogger', year_from='2015')[0]}).content.decode()
+        self.assertIn('2015-00-00-sigesfr-dogger', html)
+
+    def test_validation_errors_stay_on_the_form(self):
+        for params, msg in [({'date_from': '1997-13'}, 'Date invalide'), ({'date_from': '1997/05'}, 'Format attendu'),
+                            ({'year_from': '2000', 'year_to': '1990'}, 'précède'), ({'date_to': '1997-02-30'}, 'Date invalide')]:
+            r = self.c.get('/recherche-avancee/', params)
+            self.assertEqual(r.status_code, 200, params)
+            self.assertIn(msg, r.content.decode(), params)
 
 
 class SourceFilesTests(FrTestCase):

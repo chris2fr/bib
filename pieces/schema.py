@@ -17,4 +17,6 @@ def ensure():
         if 'xtimezone' not in cols:
             c.execute("ALTER TABLE pieces ADD COLUMN xtimezone TEXT DEFAULT 'Europe/Paris'")
             c.execute('UPDATE pieces SET xtimezone = NULL')      # les entrées existantes n'ont pas de fuseau (vide par défaut)
+        if 'field_order' in cols:                                  # ordre par entrée abandonné : l'ordre des champs est universel
+            c.execute('ALTER TABLE pieces DROP COLUMN field_order')    # SQLite >= 3.35
     _ok = True

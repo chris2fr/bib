@@ -1,6 +1,7 @@
 import functools
 import json
 import mimetypes
+from urllib.parse import urlencode
 
 from django.conf import settings
 from django.contrib import messages
@@ -9,13 +10,13 @@ from django.db import DatabaseError
 from django.http import FileResponse, Http404, HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from frlib import BIBSET, SPECIAL
+from frlib import BIBSET, SPECIAL, sort_fields
 
 from . import files, helpers, search
 from .audit import run_audit
 from .bibfmt import bib_text
 from .corpus import get_corpus
-from .forms import PieceForm
+from .forms import AdvancedSearchForm, PieceForm
 from .models import Piece
 from .render import render_markdown
 from .similar import get_similarity
@@ -103,8 +104,8 @@ def detail(request, key):
                          'origin': 'supprimé du .bib' if ov[name] is None else 'surcharge'})
         else:
             rows.append({'name': name, 'value': base, 'origin': 'base'})
-    rows += [{'name': n, 'value': v, 'origin': 'bibtex seul'} for n, v in ov.items()
-             if n not in BIBSET and n != 'ENTRYTYPE' and v is not None]
+    rows += [{'name': n, 'value': ov[n], 'origin': 'bibtex seul'}
+             for n in sort_fields([n for n, v in ov.items() if n not in BIBSET and n != 'ENTRYTYPE' and v is not None], 'bibtex')]
     extras = [{'name': k, 'value': json.dumps(v, ensure_ascii=False, indent=2) if isinstance(v, (dict, list)) else v}
               for k, v in entry.items() if k not in SPECIAL and k not in BIBSET]
     full = request.GET.get('full') == '1'
@@ -230,6 +231,26 @@ def duplicates_view(request):
         threshold = 0.85
     return render(request, 'pieces/duplicates.html',
                   {'pairs': get_similarity().duplicates(threshold), 'threshold': threshold})
+
+
+def advanced_search(request):
+    """Formulaire de recherche avancée : traduit les champs en requête et renvoie à la liste de résultats."""
+    try:
+        docs = get_corpus().docs
+    except DatabaseError as e:
+        return render(request, 'pieces/setup.html', {'error': str(e), 'db': settings.DATABASES['default']['NAME']}, status=503)
+    choices = {name: sorted({v for d in docs for v in d.values(name)}, key=lambda v: (v.lower(), v))
+               for name, _, _ in AdvancedSearchForm.SELECTS}
+    form = AdvancedSearchForm(request.GET or None, choices=choices, sorts=search.SORTS)
+    if request.GET and form.is_valid():
+        params = {}
+        query = form.build_query()
+        if query:
+            params['q'] = query
+        if form.cleaned_data.get('sort'):
+            params['sort'] = form.cleaned_data['sort']
+        return redirect(reverse('list') + ('?' + urlencode(params) if params else ''))
+    return render(request, 'pieces/advanced.html', {'form': form})
 
 
 HELP = [

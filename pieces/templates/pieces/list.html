@@ -11,7 +11,7 @@
     <label>du <input type="date" name="du" value="{{ du }}"></label>
     <label>au <input type="date" name="au" value="{{ au }}"></label>
   </span>
-  <a href="{% url 'help' %}">Aide à la recherche</a>
+  <a href="{% url 'advanced' %}">Recherche avancée</a> · <a href="{% url 'help' %}">Aide à la recherche</a>
 </form>
 
 {% if out.error %}<p class="error">{{ out.error }}</p>{% endif %}

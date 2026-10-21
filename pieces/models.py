@@ -2,13 +2,13 @@
 
 Une ligne = une entrée du fr.json « remonté » (voir outils/lib/frlib.py) :
   colonnes BibTeX = valeurs de base ; extra = autres champs (JSON) ; bibtex = surcharges du .bib (JSON) ;
-  field_order = ordre des clés de l'entrée (JSON). Les colonnes générées (xpiecefond...) sont absentes du modèle."""
+  L'ordre des champs n'est pas stocké (universel, voir frlib.order_entry). Les colonnes générées (xpiecefond...) sont absentes du modèle."""
 import json
 
 from django.db import models
 from frlib import BIB, entry_to_row, row_to_entry
 
-ROW_FIELDS = ['entrytype', *BIB, 'extra', 'bibtex', 'markdown', 'field_order']
+ROW_FIELDS = ['entrytype', *BIB, 'extra', 'bibtex', 'markdown']
 
 
 class Piece(models.Model):
@@ -51,7 +51,6 @@ class Piece(models.Model):
     extra = models.TextField(default='{}')
     bibtex = models.TextField(null=True, blank=True)
     markdown = models.TextField(default='')
-    field_order = models.TextField(default='[]')
 
     class Meta:
         managed = False
@@ -84,8 +83,10 @@ class Piece(models.Model):
             self.key = row['id']
             changed.append('key')
         for f in ROW_FIELDS:
-            if getattr(self, f) != row[f]:
-                setattr(self, f, row[f])
+            old, new = getattr(self, f), row[f]
+            same = (json.loads(old or 'null') == json.loads(new or 'null')) if f in ('extra', 'bibtex') else old == new
+            if not same:
+                setattr(self, f, new)
                 changed.append(f)
         return changed
 
