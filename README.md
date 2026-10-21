@@ -28,6 +28,8 @@ python manage.py test                      # tests
 Fichiers par défaut : `./biblio.db` (`FR_DB` pour changer) et `./biblio.json`. Les modifications faites dans le site vivent
 dans la base : `python manage.py dumpjson biblio.json` (ou le lien « fr.json » du site) réécrit le JSON.
 
+Raccourcis : `make install`, `make load` (`FORCE=1` pour remplacer), `make run`, `make test`, `make dump` ; `make help` liste tout.
+
 ## Déploiement
 
 Application sans authentification, pensée pour un usage local ou un réseau de confiance (placez-la derrière un reverse proxy
