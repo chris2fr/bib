@@ -366,6 +366,99 @@ class EnvFileTests(TestCase):
             self.assertIsNone(load_env(empty))                                           # pas de fichier : sans effet
 
 
+class OverrideMoveTests(FrTestCase):
+    key = '1997-05-00-brgmfr-39522'      # base : xtheme géothermie, surcharges : xtheme dogger, abstract « Résumé propre au .bib »
+
+    def setUp(self):
+        super().setUp()
+        self.c = Client()
+
+    def move(self, action, field):
+        return self.c.post(f'/p/{self.key}/surcharge/', {'action': action, 'field': field}, follow=True)
+
+    def piece(self):
+        return Piece.objects.get(key=self.key)
+
+    def test_buttons_on_the_detail_page(self):
+        html = self.c.get(f'/p/{self.key}/').content.decode()
+        self.assertIn('value="bib2base"', html)
+        self.assertIn('value="base2bib"', html)
+        Piece.objects.filter(key=self.key).update(bibtex=None)
+        bump()
+        html = self.c.get(f'/p/{self.key}/').content.decode()
+        self.assertNotIn('bib2base', html)                                    # rien à déplacer sans surcharge
+
+    def test_base2bib_deletes_only_the_override(self):
+        self.assertIn('supprimée', self.move('base2bib', 'xtheme').content.decode())
+        p = self.piece()
+        self.assertEqual(p.xtheme, 'géothermie')                              # la base est gardée
+        self.assertEqual(p.overrides, {'abstract': 'Résumé propre au .bib'})
+
+    def test_bib2base_moves_the_value_into_the_base(self):
+        self.assertIn('appliquée à la base', self.move('bib2base', 'abstract').content.decode())
+        p = self.piece()
+        self.assertEqual(p.abstract, 'Résumé propre au .bib')
+        self.assertEqual(p.overrides, {'xtheme': 'dogger'})
+        self.assertEqual(p.title, "Optimisation de l'opération géothermique de Coulommiers")        # le reste est intact
+        self.assertIn(self.key, [d.key for d, _, _ in search.search('propre').ranked])               # FTS à jour
+
+    def test_null_override_removes_the_base_value(self):
+        Piece.objects.filter(key=self.key).update(bibtex=json.dumps({'xtheme': None}))
+        bump()
+        self.assertIn('<button name="action" value="bib2base"', self.c.get(f'/p/{self.key}/').content.decode())
+        self.move('bib2base', 'xtheme')
+        p = self.piece()
+        self.assertIsNone(p.xtheme)
+        self.assertIsNone(p.bibtex)
+
+    def test_all_overrides_at_once(self):
+        self.move('bib2base', '*')
+        p = self.piece()
+        self.assertEqual((p.xtheme, p.abstract, p.bibtex), ('dogger', 'Résumé propre au .bib', None))
+        Piece.objects.filter(key=self.key).update(bibtex=json.dumps({'xtheme': 'autre', 'doi': '10.1/x'}))
+        bump()
+        self.move('bib2base', '*')
+        p = self.piece()
+        self.assertEqual((p.xtheme, p.overrides), ('autre', {'doi': '10.1/x'}))                      # champ propre au .bib : reste surcharge
+        self.move('base2bib', '*')
+        self.assertIsNone(self.piece().bibtex)
+
+    def test_moved_value_goes_through_the_form_rules(self):
+        Piece.objects.filter(key=self.key).update(bibtex=json.dumps({'date': '1997', 'xtime': '25:00'}))
+        bump()
+        r = self.move('bib2base', 'date')
+        self.assertIn('Valeur refusée', r.content.decode())
+        self.assertEqual(self.piece().date, '1997-05-00')                                            # rien n'a changé
+        self.assertEqual(self.piece().overrides, {'date': '1997', 'xtime': '25:00'})
+        Piece.objects.filter(key=self.key).update(bibtex=json.dumps({'date': '1998-01-02'}))
+        bump()
+        self.move('bib2base', 'date')
+        p = self.piece()
+        self.assertEqual((p.date, p.year, p.bibtex), ('1998-01-02', '1998', None))                   # year recalculée
+
+    def test_refusals_and_readonly(self):
+        Piece.objects.filter(key=self.key).update(bibtex=json.dumps({'year': '2001', 'doi': 'x'}))
+        bump()
+        self.assertIn('calculé', self.move('bib2base', 'year').content.decode())                   # year est calculée : pas de bib2base
+        self.assertIn('introuvable', self.move('base2bib', 'title').content.decode())
+        r = self.c.get(f'/p/{self.key}/surcharge/')                                                   # GET : retour à la fiche, sans rien changer
+        self.assertEqual((r.status_code, r['Location']), (302, f'/p/{self.key}/'))
+        self.move('base2bib', 'year')
+        self.assertEqual(self.piece().overrides, {'doi': 'x'})
+        with override_settings(FR_READONLY=True):
+            self.assertEqual(self.move('base2bib', 'doi').status_code, 403)
+            self.assertNotIn('base2bib', self.c.get(f'/p/{self.key}/').content.decode())
+
+    def test_override_without_base_value_is_listed(self):
+        Piece.objects.filter(key=self.key).update(bibtex=json.dumps({'publisher': 'Éditeur .bib'}))
+        bump()
+        html = self.c.get(f'/p/{self.key}/').content.decode()
+        self.assertIn('Éditeur .bib', html)
+        self.assertIn('sans valeur de base', html)
+        self.move('bib2base', 'publisher')
+        self.assertEqual(self.piece().publisher, 'Éditeur .bib')
+
+
 class DeclaredDuplicateTests(FrTestCase):
     A, B = '2024-03-20-anteagroup-0001', '2024-03-20-anteagroup-0002'
 
