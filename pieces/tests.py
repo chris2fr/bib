@@ -11,7 +11,7 @@ from . import helpers, search
 from .audit import run_audit
 from .corpus import bump
 from .forms import PieceForm
-from .models import Piece
+from .models import HelperValue, Piece
 from .similar import get_similarity
 from .textutil import fold, osa, stem
 
@@ -325,6 +325,16 @@ class ViewTests(FrTestCase):
             self.assertEqual(c.fetchone()[0], 0)                       # vide par défaut pour l'existant
         self.assertIsNone(Piece.objects.get(key=self.key).xtimezone)
 
+    def test_raw_sql_under_debug_cursor(self):
+        # DEBUG=True (runserver) formate la requête avec « sql % params » : un « ? » au lieu de « %s » y échoue
+        connection.force_debug_cursor = True
+        try:
+            self.assertEqual(self.c.get(f'/p/{self.key}/modifier/').status_code, 200)
+            HelperValue.objects.filter(field='keywords').delete()
+            self.assertIn('nappe', helpers.choices('keywords'))
+        finally:
+            connection.force_debug_cursor = False
+
     def test_keywords_helper(self):
         self.assertEqual(helpers.choices('keywords'), ['corrosion', 'géothermie', 'nappe'])     # découpés sur « , » et « ; »
         page = self.c.get(f'/p/{self.key}/modifier/').content.decode()
@@ -335,7 +345,6 @@ class ViewTests(FrTestCase):
         self.c.post(f'/p/{self.key}/modifier/', self._post_data(entry, keywords='géothermie, corrosion;nouveau mot'), follow=True)
         self.assertEqual(Piece.objects.get(key=self.key).keywords, 'géothermie, corrosion;nouveau mot')   # texte saisi conservé tel quel
         self.assertIn('nouveau mot', helpers.choices('keywords'))
-        from .models import HelperValue
         HelperValue.objects.filter(field='keywords').delete()
         self.assertIn('nappe', helpers.choices('keywords'))                                       # champ multiple vide : rempli de nouveau
 
