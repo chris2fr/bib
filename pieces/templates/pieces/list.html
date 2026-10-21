@@ -1,0 +1,50 @@
+{% extends "pieces/base.html" %}
+{% block content %}
+<form class="search" method="get">
+  <input type="search" name="q" value="{{ q }}" placeholder="géothermie dogger · theme:dogger · entre 1990 et 2000" autofocus>
+  {% for name, value in hidden %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+  <select name="sort">{% for v, label in sorts %}<option value="{{ v }}"{% if v == sort %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+  <label><input type="checkbox" name="mode" value="fts"{% if mode == 'fts' %} checked{% endif %}> FTS5 brut</label>
+  <label><input type="checkbox" name="broad" value="1"{% if broad %} checked{% endif %}> élargir</label>
+  <button>Chercher</button>
+</form>
+
+{% if out.error %}<p class="error">{{ out.error }}</p>{% endif %}
+{% if interp.mode %}
+<p class="interp">
+  {% for u in interp.units %}<span class="unit {{ u.level }}">{{ u.text }}{% if u.label %} <small>({{ u.label }}{% if u.detail %} : {{ u.detail }}{% endif %})</small>{% endif %}</span> {% endfor %}
+  {% for f in interp.filters %}<span class="unit filter">{{ f }}</span> {% endfor %}
+  {% for n in interp.notes %}<small class="note">{{ n }}.</small> {% endfor %}
+  {% if interp.relaxed %}<strong>{{ interp.relaxed }}.</strong>{% endif %}
+</p>
+{% endif %}
+
+{% if chips %}<p class="chips">{% for c in chips %}<a href="{{ c.url }}">{{ c.label }} ×</a> {% endfor %}<a href="{{ clear_url }}">tout effacer</a></p>{% endif %}
+
+<div class="cols">
+<aside>
+  {% for f in facets_ui %}
+  <h3>{{ f.label }}</h3>
+  <ul>{% for v in f.values %}<li{% if v.active %} class="active"{% endif %}><a href="{{ v.url }}">{{ v.value }}</a> <small>{{ v.count }}</small></li>{% endfor %}</ul>
+  {% endfor %}
+</aside>
+<section>
+  <p><strong>{{ total }}</strong> résultat{{ total|pluralize }} sur {{ out.total_docs }}
+    {% if not broad and q %}· <a href="{{ broad_url }}">élargir (racines, orthographe)</a>{% endif %}</p>
+  {% for it in items %}
+  <article>
+    <h2><a href="{% url 'detail' it.doc.key %}">{{ it.doc.title }}</a></h2>
+    <p class="meta"><code>{{ it.doc.key }}</code>{% if it.doc.v.author %} · {{ it.doc.v.author }}{% endif %}{% if it.doc.v.xtheme %} · {{ it.doc.v.xtheme }}{% endif %}</p>
+    {% if it.snippet %}<p class="snippet">{{ it.snippet }}</p>{% elif it.abstract %}<p class="snippet">{{ it.abstract }}</p>{% endif %}
+  </article>
+  {% empty %}<p>Aucun résultat.</p>{% endfor %}
+  {% if page.paginator.num_pages > 1 %}
+  <p class="pager">
+    {% if page.has_previous %}<a href="{{ page_base }}page={{ page.previous_page_number }}">← précédent</a>{% endif %}
+    page {{ page.number }} / {{ page.paginator.num_pages }}
+    {% if page.has_next %}<a href="{{ page_base }}page={{ page.next_page_number }}">suivant →</a>{% endif %}
+  </p>
+  {% endif %}
+</section>
+</div>
+{% endblock %}

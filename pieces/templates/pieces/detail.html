@@ -1,0 +1,26 @@
+{% extends "pieces/base.html" %}
+{% block title %}{{ piece.title|default:piece.key }} · {{ site_name }}{% endblock %}
+{% block content %}
+<h1>{{ piece.title|default:piece.key }}</h1>
+<p class="meta"><code>{{ piece.key }}</code> · {{ piece.entrytype }}
+  · <a href="{% url 'piece_bib' piece.key %}">.bib</a>
+  {% if not readonly %}· <a href="{% url 'edit' piece.key %}">Modifier</a> · <a href="{% url 'delete' piece.key %}">Supprimer</a>{% endif %}</p>
+
+<h2>Champs BibTeX</h2>
+<table>
+{% for r in rows %}<tr><th>{{ r.name }}</th><td>{{ r.value }}{% if r.base %}<br><small>base : {{ r.base }}</small>{% endif %}</td><td><small>{{ r.origin }}</small></td></tr>{% endfor %}
+</table>
+
+{% if extras %}<h2>Autres champs</h2>
+<table>{% for e in extras %}<tr><th>{{ e.name }}</th><td><pre>{{ e.value }}</pre></td></tr>{% endfor %}</table>{% endif %}
+
+<h2>Texte <small>({{ size }} caractères)</small></h2>
+<div class="markdown">{{ body }}</div>
+{% if truncated %}<p><a href="?full=1">Afficher tout le texte</a></p>{% endif %}
+
+{% if similar %}<h2>Documents proches</h2>
+<ul>{% for d, s in similar %}<li><a href="{% url 'detail' d.key %}">{{ d.title }}</a> <small>{{ s|floatformat:2 }}</small></li>{% endfor %}</ul>{% endif %}
+
+<details><summary>BibTeX</summary><pre>{{ bib }}</pre></details>
+<details><summary>JSON</summary><pre>{{ raw }}</pre></details>
+{% endblock %}

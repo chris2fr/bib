@@ -1,0 +1,6 @@
+{% extends "pieces/base.html" %}
+{% block content %}
+<h1>Supprimer {{ piece.key }} ?</h1>
+<p>{{ piece.title }}</p>
+<form method="post">{% csrf_token %}<button>Supprimer définitivement</button> <a href="{% url 'detail' piece.key %}">Annuler</a></form>
+{% endblock %}

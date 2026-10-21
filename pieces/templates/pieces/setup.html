@@ -1,0 +1,6 @@
+{% extends "pieces/base.html" %}
+{% block content %}
+<h1>Base introuvable ou vide</h1>
+<p>La base <code>{{ db }}</code> n'a pas la table <code>pieces</code> : <code>{{ error }}</code></p>
+<p>Construisez-la avec <code>python manage.py loadjson biblio.json</code>. N'utilisez pas <code>migrate</code>.</p>
+{% endblock %}

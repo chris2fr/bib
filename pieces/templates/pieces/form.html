@@ -1,0 +1,18 @@
+{% extends "pieces/base.html" %}
+{% block content %}
+<h1>{% if creating %}Nouvelle entrée{% else %}Modifier {{ piece.key }}{% endif %}</h1>
+<form method="post" class="edit">
+  {% csrf_token %}
+  {% if form.non_field_errors %}<div class="error">{{ form.non_field_errors }}</div>{% endif %}
+  {% for field in form %}
+  <p class="field">
+    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+    {{ field }}
+    {% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}
+    {% if field.errors %}<span class="error">{{ field.errors|join:" " }}</span>{% endif %}
+  </p>
+  {% endfor %}
+  <button>Enregistrer</button>
+  <a href="{% if piece %}{% url 'detail' piece.key %}{% else %}{% url 'list' %}{% endif %}">Annuler</a>
+</form>
+{% endblock %}
