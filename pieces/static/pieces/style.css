@@ -53,3 +53,14 @@ form.inline button { font-size: .8rem; padding: 0 .4rem; }
 article.is-dup { border-left: 4px solid #d97706; padding-left: .6rem; }
 article.is-dup h2 a:first-child { opacity: .85; }
 .badge-dup { font-size: .75rem; font-weight: 400; background: rgba(217,119,6,.15); border-radius: 4px; padding: 0 .4rem; white-space: nowrap; }
+form.bulkbar { display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; padding: .4rem .6rem; border: 1px solid var(--line); border-radius: 4px; margin: .5rem 0; }
+.selbox { margin-right: .3rem; }
+.kws { margin: .1rem 0; font-size: .85rem; color: var(--muted); }
+fieldset { border: 1px solid var(--line); border-radius: 4px; margin: 0 0 1rem; }
+form.bulk .field input:not([type=checkbox]) { width: 100%; box-sizing: border-box; padding: .35rem; font: inherit; }
+label.inline { display: inline-flex; gap: .25rem; align-items: center; font-size: .85rem; }
+table.preview th { width: 22rem; font-weight: 400; }
+table.preview tr.same { opacity: .55; }
+table.preview tr.err { background: rgba(220,38,38,.08); }
+ins { text-decoration: none; background: rgba(22,163,74,.18); }
+del { background: rgba(220,38,38,.15); }

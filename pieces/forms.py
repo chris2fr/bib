@@ -60,7 +60,7 @@ class PieceForm(forms.Form):
                                                         'xtimezone': 'Facultatif ; vide = heure sans fuseau.',
                         'xdup': 'Clé d\'une autre entrée dont celle-ci est le doublon (gardé car cité par d\'anciens documents). Vide : pas un doublon.',
                         'file': 'Nom du fichier dans BIBMAN_FILES, sans dossier. Vide : <clé>.pdf.',
-                        'keywords': 'Séparés par des virgules ; les mots-clés déjà connus sont proposés pendant la frappe.'}.get(f, ''))
+                        'keywords': 'Séparés par une virgule et une espace (« mot, mot ») ; les mots-clés déjà connus sont proposés pendant la frappe.'}.get(f, ''))
             if f in helpers.HELPER_FIELDS:
                 self._helper(f)
         self.fields['extra_json'] = forms.CharField(
@@ -215,6 +215,12 @@ class PieceForm(forms.Form):
                     v = None                  # date ou heure effacée : xdatetime calculé disparaît
                 else:
                     continue                  # rien à calculer : valeur héritée laissée telle quelle
+            elif f == 'keywords' and v:
+                # liste « mot, mot » : réécrite avec virgule et espace seulement si les mots ont changé
+                if old and helpers.split_multi(v) == helpers.split_multi(old.get('keywords')):
+                    v = old.get('keywords')
+                else:
+                    v = ', '.join(helpers.split_multi(v))
             if not v:
                 entry.pop(f, None)
             elif entry.get(f) != v:

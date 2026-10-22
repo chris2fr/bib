@@ -85,6 +85,14 @@ par ordre alphabétique ; sans paramètre, tout est alphabétique. L'ordre n'est
 automatiquement au premier accès, ce qui demande SQLite ≥ 3.35), un champ vide équivaut à un champ absent, et réécrire un
 `fr.json` ne reproduit donc plus l'ordre d'origine des clés.
 
+**Modification groupée** : la liste de résultats a une case à cocher par entrée (et « cocher la page »). « Modifier la sélection » ouvre un
+formulaire unique pour les entrées cochées, « Modifier les N résultats » pour toute la recherche, toutes pages confondues (2000 au
+plus). On y **ajoute**, **retire** ou **remplace** des mots-clés (liste « mot, mot », complétion pendant la frappe) et on fixe ou
+vide ENTRYTYPE, thème, nature (`type`), source, langue, `xtype`, organisation ; un champ laissé vide ne change rien. Un **aperçu**
+(avant → après, entrées inchangées ou refusées) précède l'application. Les mots-clés se comparent sans accents ni casse, la graphie la
+plus utilisée dans la base est reprise, et une liste modifiée est réécrite « mot, mot » (virgule et espace) ; une entrée dont la liste ne
+change pas n'est pas touchée. Le formulaire d'une seule entrée réécrit de même les mots-clés qu'on a modifiés.
+
 **Surcharges du .bib** : sur la fiche, de discrets boutons `bib2base` / `base2bib` apparaissent à côté de chaque champ surchargé (et, en
 titre de section, pour toutes les surcharges). `bib2base` fait de la valeur du .bib la valeur de base puis supprime la surcharge
 (une surcharge `null`, c'est-à-dire un champ retiré du .bib, retire aussi la valeur de base, après confirmation) ; la nouvelle

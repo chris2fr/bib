@@ -4,6 +4,7 @@ from pathlib import Path
 
 import frlib
 import json2db
+from unittest import mock
 from django.db import connection
 from django.test import Client, TestCase, override_settings
 from frlib import BIBSET, SPECIAL
@@ -472,6 +473,94 @@ class OverrideMoveTests(FrTestCase):
         self.assertEqual(self.piece().publisher, 'Éditeur .bib')
 
 
+class BulkEditTests(FrTestCase):
+    A, B, C = '2024-03-20-anteagroup-0001', '2024-03-20-anteagroup-0002', '1997-05-00-brgmfr-39522'   # C : mots-clés « géothermie,corrosion »
+
+    def setUp(self):
+        super().setUp()
+        self.c = Client()
+        Piece.objects.filter(key=self.A).update(keywords='dogger;  nappe')
+        Piece.objects.filter(key=self.B).update(keywords=None)
+        bump()
+
+    def post(self, step='', keys=None, **fields):
+        data = {'keys': ' '.join(keys or [self.A, self.B, self.C]), 'step': step, 'qs': 'q=dogger', **fields}
+        return self.c.post('/modifier-plusieurs/', data, follow=True)
+
+    def kw(self, key):
+        return Piece.objects.get(key=key).keywords
+
+    def test_list_has_checkboxes_and_bulk_buttons(self):
+        html = self.c.get('/?q=dogger').content.decode()
+        self.assertIn('name="keys" value="2015-00-00-sigesfr-dogger" form="selform"', html)
+        self.assertIn('id="selform"', html)
+        self.assertIn('value="all"', html)
+        self.assertIn('géothermie,corrosion', self.c.get('/?q=brgmfr-39522').content.decode())          # mots-clés visibles
+        with override_settings(FR_READONLY=True):
+            self.assertNotIn('selform', self.c.get('/?q=dogger').content.decode())
+            self.assertEqual(self.c.post('/modifier-plusieurs/', {'keys': self.A}).status_code, 403)
+
+    def test_form_from_selection_and_from_all_results(self):
+        r = self.c.post('/modifier-plusieurs/', {'scope': 'sel', 'keys': [self.A, self.B], 'qs': 'q=dogger'})
+        html = r.content.decode()
+        self.assertIn('Modifier 2 entrées', html)
+        self.assertIn(f'name="keys" value="{self.A} {self.B}"', html)                  # clés reportées d'étape en étape
+        self.assertIn('<code>dogger</code> (1)', html)                                   # mots-clés présents dans la sélection
+        r = self.c.post('/modifier-plusieurs/', {'scope': 'all', 'qs': 'q=dogger'})
+        self.assertIn(self.A, r.content.decode())
+        self.assertIn('2015-00-00-sigesfr-dogger', r.content.decode())
+        self.assertIn('Aucune entrée sélectionnée', self.c.post('/modifier-plusieurs/', {'scope': 'sel'}, follow=True).content.decode())
+
+    def test_preview_changes_nothing_then_apply(self):
+        r = self.post('preview', kw_add='Dogger, corrosion, nouveau')
+        html = r.content.decode()
+        self.assertIn('Aperçu', html)
+        self.assertEqual((self.kw(self.A), self.kw(self.B)), ('dogger;  nappe', None))    # l'aperçu n'écrit rien
+        self.assertIn('<ins>dogger, nappe, corrosion, nouveau</ins>', html)            # graphie « dogger » conservée, pas de doublon
+        r = self.post('apply', kw_add='Dogger, corrosion, nouveau')
+        self.assertIn('3 entrées modifiées', r.content.decode())
+        self.assertEqual(self.kw(self.A), 'dogger, nappe, corrosion, nouveau')           # séparateur « , » normalisé
+        self.assertEqual(self.kw(self.B), 'dogger, corrosion, nouveau')
+        self.assertEqual(self.kw(self.C), 'géothermie, corrosion, dogger, nouveau')      # liste modifiée : réécrite en entier « mot, mot »
+        self.assertIn('nouveau', helpers.choices('keywords'))                              # liste d'aide mise à jour
+        self.assertEqual([d.key for d, _, _ in search.search('kw:nouveau', sort='date').ranked], [self.C, self.A, self.B])   # FTS et cache à jour
+
+    def test_remove_and_replace_and_no_op(self):
+        self.post('apply', kw_remove='NAPPE, absent')
+        self.assertEqual(self.kw(self.A), 'dogger')
+        self.assertEqual(self.kw(self.C), 'géothermie,corrosion')                          # rien à retirer : intact, séparateur d'origine
+        r = self.post('apply', kw_add='géothermie')                                         # C l'a déjà
+        self.assertIn('2 entrées modifiées, 1 inchangée', r.content.decode())
+        self.post('apply', kw_add='seul, deux', kw_replace='1')
+        self.assertEqual({self.kw(self.A), self.kw(self.B), self.kw(self.C)}, {'seul, deux'})
+        self.post('apply', kw_replace='1', kw_add='')                                      # liste vide + remplacer = tout effacer
+        self.assertEqual({self.kw(self.A), self.kw(self.B), self.kw(self.C)}, {None})
+
+    def test_other_fields_clear_and_errors(self):
+        self.post('apply', bf_xtheme='sismique', bf_entrytype='techreport', bf_language='fr')
+        for k in (self.A, self.B, self.C):
+            p = Piece.objects.get(key=k)
+            self.assertEqual((p.xtheme, p.entrytype, p.language), ('sismique', 'techreport', 'fr'))
+        self.assertIn('sismique', helpers.choices('xtheme'))
+        self.assertIn('techreport', helpers.choices('entrytype'))
+        self.post('apply', clear_xtheme='1', clear_entrytype='1')                           # ENTRYTYPE ne se vide pas
+        self.assertEqual(Piece.objects.get(key=self.A).xtheme, None)
+        self.assertEqual(Piece.objects.get(key=self.A).entrytype, 'techreport')
+        r = self.post('preview', bf_organization='x { y')
+        self.assertIn('déséquilibrées', r.content.decode())
+        self.assertIn('1 refusée'.replace('1', '3'), r.content.decode())
+        r = self.post('apply', bf_organization='x { y')
+        self.assertIn('0 entrée modifiée', r.content.decode())
+        self.assertIn('Aucune modification demandée', self.post('preview').content.decode())
+        self.assertEqual(self.c.get('/modifier-plusieurs/').status_code, 302)
+
+    def test_limit(self):
+        from . import bulk
+        with mock.patch.object(bulk, 'BULK_MAX', 1), mock.patch('pieces.views.BULK_MAX', 1):
+            self.assertIn('limitée à 1', self.post('preview', kw_add='x').content.decode())
+            self.assertEqual(self.kw(self.A), 'dogger;  nappe')
+
+
 class DeclaredDuplicateTests(FrTestCase):
     A, B = '2024-03-20-anteagroup-0001', '2024-03-20-anteagroup-0002'
 
@@ -820,7 +909,7 @@ class ViewTests(FrTestCase):
         self.assertIn('multi.js', page)
         entry = Piece.objects.get(key=self.key).to_entry()
         self.c.post(f'/p/{self.key}/modifier/', self._post_data(entry, keywords='géothermie, corrosion;nouveau mot'), follow=True)
-        self.assertEqual(Piece.objects.get(key=self.key).keywords, 'géothermie, corrosion;nouveau mot')   # texte saisi conservé tel quel
+        self.assertEqual(Piece.objects.get(key=self.key).keywords, 'géothermie, corrosion, nouveau mot')   # réécrit « mot, mot »
         self.assertIn('nouveau mot', helpers.choices('keywords'))
         HelperValue.objects.filter(field='keywords').delete()
         self.assertIn('nappe', helpers.choices('keywords'))                                       # champ multiple vide : rempli de nouveau

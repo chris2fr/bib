@@ -1,0 +1,33 @@
+{% extends "pieces/base.html" %}
+{% block title %}Aperçu · {{ site_name }}{% endblock %}
+{% block content %}
+<h1>Aperçu : {{ n }} entrée{{ n|pluralize }}</h1>
+<p><strong>{{ n_change }}</strong> sera{{ n_change|pluralize:",ont" }} modifiée{{ n_change|pluralize }}, {{ n_same }} inchangée{{ n_same|pluralize }}{% if n_err %}, <span class="error">{{ n_err }} refusée{{ n_err|pluralize }}</span>{% endif %}.</p>
+
+<form method="post">
+  {% csrf_token %}
+  <input type="hidden" name="keys" value="{{ keys }}">
+  <input type="hidden" name="qs" value="{{ qs }}">
+  <input type="hidden" name="step" value="apply">
+  <input type="hidden" name="kw_add" value="{{ p.kw_add }}">
+  <input type="hidden" name="kw_remove" value="{{ p.kw_remove }}">
+  {% if p.kw_replace %}<input type="hidden" name="kw_replace" value="1">{% endif %}
+  {% for k, v in p.items %}{% if k|slice:":3" == "bf_" or k|slice:":6" == "clear_" %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endif %}{% endfor %}
+  <button{% if not n_change %} disabled{% endif %}>Appliquer à {{ n_change }} entrée{{ n_change|pluralize }}</button>
+  <a href="{{ back }}">Annuler</a>
+</form>
+
+<table class="preview">
+  {% for x in shown %}
+  <tr class="{% if x.errors %}err{% elif not x.diff %}same{% endif %}">
+    <th><a href="{% url 'detail' x.piece.key %}"><code>{{ x.piece.key }}</code></a><br><small>{{ x.piece.title|default:""|truncatechars:70 }}</small></th>
+    <td>
+      {% for name, d in x.diff.items %}<div><small>{{ name }}</small> : <del>{{ d.0|default:"∅" }}</del> → <ins>{{ d.1|default:"∅" }}</ins></div>{% endfor %}
+      {% for e in x.errors %}<div class="error">{{ e }}</div>{% endfor %}
+      {% if not x.diff and not x.errors %}<small>inchangée</small>{% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% if more %}<p><small>… et {{ more }} autres entrées (même opération).</small></p>{% endif %}
+{% endblock %}

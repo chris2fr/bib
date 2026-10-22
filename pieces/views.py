@@ -1,4 +1,5 @@
 import functools
+from collections import Counter
 import json
 import mimetypes
 from urllib.parse import urlencode
@@ -7,6 +8,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db import DatabaseError
+from django.http import QueryDict
 from django.http import FileResponse, Http404, HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -16,6 +18,7 @@ from . import dups, files, helpers, search
 from .audit import run_audit
 from .bibfmt import bib_text
 from .corpus import bump, get_corpus
+from .bulk import BULK_FIELDS, BULK_MAX, apply_plan, parse_changes, plan as bulk_plan, vocabulary
 from .forms import COMPUTED_FIELDS, AdvancedSearchForm, PieceForm
 from .models import Piece
 from .render import render_markdown
@@ -46,18 +49,24 @@ def _url(params, **changes):
     return '?' + s if s else '?'
 
 
+def results_for(get):
+    """Recherche décrite par les paramètres de la liste (q, mode, broad, sort, du, au, facettes)."""
+    q = get.get('q', '').strip()
+    mode = 'fts' if get.get('mode') == 'fts' else 'auto'
+    broad = get.get('broad') == '1'
+    sort = get.get('sort', 'rel')
+    du, au = get.get('du', '').strip(), get.get('au', '').strip()
+    selected = {n: get.getlist(n) for n in FACET_NAMES if get.getlist(n)}
+    out = search.search(q, mode=mode, facets=selected, sort=sort, broad=broad, date_from=du, date_to=au)
+    return out, q, mode, broad, sort, du, au, selected
+
+
 def list_view(request):
     try:
         get_corpus()
     except DatabaseError as e:
         return render(request, 'pieces/setup.html', {'error': str(e), 'db': settings.DATABASES['default']['NAME']}, status=503)
-    q = request.GET.get('q', '').strip()
-    mode = 'fts' if request.GET.get('mode') == 'fts' else 'auto'
-    broad = request.GET.get('broad') == '1'
-    sort = request.GET.get('sort', 'rel')
-    du, au = request.GET.get('du', '').strip(), request.GET.get('au', '').strip()
-    selected = {n: request.GET.getlist(n) for n in FACET_NAMES if request.GET.getlist(n)}
-    out = search.search(q, mode=mode, facets=selected, sort=sort, broad=broad, date_from=du, date_to=au)
+    out, q, mode, broad, sort, du, au, selected = results_for(request.GET)
     page = Paginator(out.ranked, PER_PAGE).get_page(request.GET.get('page'))
     snips = search.snippets([d.n for d, _, _ in page], out.highlight)
     corpus = get_corpus()
@@ -85,7 +94,7 @@ def list_view(request):
     return render(request, 'pieces/list.html', {
         'q': q, 'du': du, 'au': au, 'mode': mode, 'broad': broad, 'sort': out.sort if out.sort in dict(search.SORTS) else 'rel',
         'sorts': search.SORTS, 'out': out, 'interp': out.interp, 'page': page, 'items': items, 'total': len(out.ranked),
-        'facets_ui': facets_ui, 'chips': chips, 'selected': selected,
+        'facets_ui': facets_ui, 'chips': chips, 'selected': selected, 'qs_state': params.urlencode(),
         'hidden': [(n, v) for n, vs in selected.items() for v in vs],
         'broad_url': _url(request.GET, broad='1', page=None), 'clear_url': '?',
         'page_base': _url(request.GET, page=None) + ('&' if request.GET.urlencode().replace('page=', '') else ''),
@@ -152,6 +161,58 @@ def source_file(request, key):
 def warn_if_file_missing(request, piece):
     if piece.file and files.folder().is_dir() and not files.locate(piece.key, piece.file):
         messages.warning(request, f'Fichier « {piece.file} » introuvable dans le dossier BIBMAN_FILES.')
+
+
+@writable
+def bulk_edit(request):
+    """Modification de plusieurs entrées : formulaire -> aperçu -> application. Les clés viennent des cases cochées de la liste
+    (scope=sel) ou de toute la recherche (scope=all, paramètres de la liste dans qs) puis sont reportées telles quelles."""
+    if request.method != 'POST':
+        return redirect('list')
+    qs = request.POST.get('qs', '')
+    back = reverse('list') + ('?' + qs if qs else '')
+    if request.POST.get('scope') == 'all':
+        try:
+            keys = [d.key for d, _, _ in results_for(QueryDict(qs))[0].ranked]
+        except DatabaseError:
+            keys = []
+    else:
+        keys = [k for v in request.POST.getlist('keys') for k in v.split()]
+    keys = list(dict.fromkeys(keys))
+    if not keys:
+        messages.error(request, 'Aucune entrée sélectionnée.')
+        return redirect(back)
+    if len(keys) > BULK_MAX:
+        messages.error(request, f'{len(keys)} entrées : la modification groupée est limitée à {BULK_MAX}. Affinez la recherche.')
+        return redirect(back)
+    by_key = {p.key: p for p in Piece.objects.filter(key__in=keys)}
+    pieces = [by_key[k] for k in keys if k in by_key]
+    corpus = get_corpus()
+    canon, counts = vocabulary(corpus)
+    changes = parse_changes(request.POST)
+    step = request.POST.get('step', '')
+    ctx = {'keys': ' '.join(k for k in keys if k in by_key), 'qs': qs, 'back': back, 'n': len(pieces), 'p': request.POST,
+           'fields': [(n, label, helpers.choices(n) if n in helpers.HELPER_FIELDS else
+                       sorted({v for d in corpus.docs for v in d.values(n)}, key=lambda v: (v.lower(), v)))
+                      for n, label in BULK_FIELDS]}
+    if step in ('preview', 'apply') and changes:
+        plans = bulk_plan(pieces, changes, canon)
+        if step == 'apply':
+            done, same, refused = apply_plan(plans)
+            bump()
+            messages.success(request, f'{done} entrée{"s" if done > 1 else ""} modifiée{"s" if done > 1 else ""}, {same} inchangée{"s" if same > 1 else ""}'
+                             + (f', {refused} refusée{"s" if refused > 1 else ""}' if refused else '') + '.')
+            return redirect(back)
+        ctx.update(plans=plans, shown=plans[:200], more=max(len(plans) - 200, 0),
+                   n_change=sum(1 for x in plans if x['diff'] and not x['errors']),
+                   n_same=sum(1 for x in plans if not x['diff'] and not x['errors']), n_err=sum(1 for x in plans if x['errors']))
+        return render(request, 'pieces/bulk_preview.html', ctx)
+    if step in ('preview', 'apply'):
+        messages.error(request, 'Aucune modification demandée.')
+    present = Counter(kw for p in pieces for kw in helpers.split_multi(p.keywords))
+    ctx['present'] = present.most_common()
+    ctx['multi_values'] = {'keywords': sorted(canon.values(), key=lambda v: (v.lower(), v)), 'present': [k for k, _ in ctx['present']]}
+    return render(request, 'pieces/bulk.html', ctx)
 
 
 def dup_candidates(piece):
