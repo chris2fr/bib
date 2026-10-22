@@ -4,6 +4,7 @@ from pieces import views
 
 urlpatterns = [
     path('', views.list_view, name='list'),
+    path('modifier-plusieurs/', views.bulk_edit, name='bulk_edit'),
     path('nouvelle/', views.create, name='create'),
     path('p/<str:key>/', views.detail, name='detail'),
     path('p/<str:key>/modifier/', views.edit, name='edit'),

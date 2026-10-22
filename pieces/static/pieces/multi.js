@@ -60,8 +60,7 @@
     }
     function accept(val) {
       var cur = current(), v = input.value;
-      var spaced = /[;,]\s/.test(v);
-      var tail = v.slice(cur.end), sep = tail.charAt(0) === ',' || tail.charAt(0) === ';' ? '' : (spaced ? ', ' : ',');
+            var tail = v.slice(cur.end), sep = tail.charAt(0) === ',' || tail.charAt(0) === ';' ? '' : ', ';
       input.value = v.slice(0, cur.start) + val + sep + tail;
       var caret = cur.start + val.length + sep.length;
       input.setSelectionRange(caret, caret);

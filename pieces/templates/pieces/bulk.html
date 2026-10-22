@@ -1,0 +1,48 @@
+{% extends "pieces/base.html" %}
+{% load static %}
+{% block title %}Modifier {{ n }} entrées · {{ site_name }}{% endblock %}
+{% block content %}
+<h1>Modifier {{ n }} entrée{{ n|pluralize }}</h1>
+<p>Les champs laissés vides ne changent rien. Un aperçu précède toute modification. <a href="{{ back }}">← retour à la liste</a></p>
+
+<form method="post" class="edit bulk">
+  {% csrf_token %}
+  <input type="hidden" name="keys" value="{{ keys }}">
+  <input type="hidden" name="qs" value="{{ qs }}">
+  <input type="hidden" name="step" value="preview">
+
+  <fieldset>
+    <legend>Mots-clés</legend>
+    <p class="field">
+      <label for="kw_add">Ajouter</label>
+      <span class="multiwrap"><input id="kw_add" name="kw_add" value="{{ p.kw_add }}" data-multi="keywords" autocomplete="off" placeholder="dogger, corrosion"></span>
+      <small>Liste « mot, mot » (virgule et espace). La graphie déjà employée dans la base est reprise ; un mot déjà présent n'est pas dupliqué.</small>
+    </p>
+    <p class="field">
+      <label for="kw_remove">Retirer</label>
+      <span class="multiwrap"><input id="kw_remove" name="kw_remove" value="{{ p.kw_remove }}" data-multi="present" autocomplete="off"></span>
+      <small>Mots présents dans la sélection : {% for kw, c in present|slice:":40" %}<code>{{ kw }}</code> ({{ c }}){% if not forloop.last %}, {% endif %}{% empty %}aucun{% endfor %}{% if present|length > 40 %}…{% endif %}</small>
+    </p>
+    <p><label><input type="checkbox" name="kw_replace" value="1"{% if p.kw_replace %} checked{% endif %}> Remplacer tous les mots-clés par la liste « Ajouter » (liste vide : tout effacer)</label></p>
+  </fieldset>
+
+  <fieldset>
+    <legend>Classement</legend>
+    {% for name, label, values in fields %}
+    <p class="field">
+      <label for="bf_{{ name }}">{{ label }}</label>
+      <input id="bf_{{ name }}" name="bf_{{ name }}" list="dl_{{ name }}" autocomplete="off" value="">
+      {% if name != 'entrytype' %}<label class="inline"><input type="checkbox" name="clear_{{ name }}" value="1"> vider</label>{% endif %}
+    </p>
+    {% endfor %}
+  </fieldset>
+
+  <button>Aperçu des modifications</button> <a href="{{ back }}">Annuler</a>
+</form>
+
+{% for name, label, values in fields %}<datalist id="dl_{{ name }}">{% for v in values %}<option value="{{ v }}">{% endfor %}</datalist>{% endfor %}
+
+<details><summary>Entrées concernées ({{ n }})</summary><p><small>{{ keys }}</small></p></details>
+{{ multi_values|json_script:"multi-values" }}
+<script src="{% static 'pieces/multi.js' %}"></script>
+{% endblock %}

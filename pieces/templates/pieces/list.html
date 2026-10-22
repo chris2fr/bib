@@ -36,10 +36,21 @@
 <section>
   <p><strong>{{ total }}</strong> résultat{{ total|pluralize }} sur {{ out.total_docs }}
     {% if not broad and q %}· <a href="{{ broad_url }}">élargir (racines, orthographe)</a>{% endif %}</p>
+  {% if items and not readonly %}
+  <form id="selform" method="post" action="{% url 'bulk_edit' %}" class="bulkbar">
+    {% csrf_token %}
+    <input type="hidden" name="qs" value="{{ qs_state }}">
+    <label><input type="checkbox" id="selall"> cocher la page</label>
+    <span><span id="selcount">0</span> sélectionnée<span class="s">s</span></span>
+    <button id="selbtn" name="scope" value="sel" disabled>Modifier la sélection</button>
+    <button name="scope" value="all" title="Applique la modification à toutes les entrées de cette recherche, sur toutes les pages">Modifier les {{ total }} résultats</button>
+  </form>
+  {% endif %}
   {% for it in items %}
-  <article>
-    <h2><a href="{% url 'detail' it.doc.key %}">{{ it.doc.title }}</a></h2>
+  <article{% if it.dup_of %} class="is-dup"{% endif %}>
+    <h2>{% if not readonly %}<input type="checkbox" class="selbox" name="keys" value="{{ it.doc.key }}" form="selform" aria-label="Sélectionner {{ it.doc.key }}"> {% endif %}<a href="{% url 'detail' it.doc.key %}">{{ it.doc.title }}</a>{% if it.dup_of %} <span class="badge-dup" title="Doublon conservé car cité par d'anciens documents">⧉ doublon de {% if it.dup_of.target %}<a href="{% url 'detail' it.dup_of.key %}">{{ it.dup_of.key }}</a>{% else %}<span class="error">{{ it.dup_of.key }} (introuvable)</span>{% endif %}</span>{% endif %}</h2>
     <p class="meta"><code>{{ it.doc.key }}</code>{% if it.doc.v.author %} · {{ it.doc.v.author }}{% endif %}{% if it.doc.v.xtheme %} · {{ it.doc.v.xtheme }}{% endif %}{% if it.has_file %} · <a href="{% url 'source_file' it.doc.key %}">📄 fichier</a>{% endif %}</p>
+    {% if it.doc.v.keywords %}<p class="kws">{{ it.doc.v.keywords }}</p>{% endif %}
     {% if it.snippet %}<p class="snippet">{{ it.snippet }}</p>{% elif it.abstract %}<p class="snippet">{{ it.abstract }}</p>{% endif %}
   </article>
   {% empty %}<p>Aucun résultat.</p>{% endfor %}
@@ -52,4 +63,21 @@
   {% endif %}
 </section>
 </div>
+<script>
+// cases à cocher de la liste : « cocher la page », compteur, bouton actif seulement si quelque chose est coché
+(function () {
+  var boxes = Array.prototype.slice.call(document.querySelectorAll('.selbox')), all = document.getElementById('selall');
+  if (!boxes.length || !all) return;
+  var count = document.getElementById('selcount'), btn = document.getElementById('selbtn');
+  function sync() {
+    var n = boxes.filter(function (b) { return b.checked; }).length;
+    count.textContent = n; btn.disabled = n === 0;
+    count.nextElementSibling.style.display = n > 1 ? '' : 'none';
+    all.checked = n === boxes.length; all.indeterminate = n > 0 && n < boxes.length;
+  }
+  all.addEventListener('change', function () { boxes.forEach(function (b) { b.checked = all.checked; }); sync(); });
+  boxes.forEach(function (b) { b.addEventListener('change', sync); });
+  sync();
+})();
+</script>
 {% endblock %}
